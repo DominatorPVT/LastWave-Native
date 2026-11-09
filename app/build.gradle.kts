@@ -160,6 +160,8 @@ android {
                 storePassword = storePasswordProp
                 keyAlias = keyAliasProp
                 keyPassword = keyPasswordProp
+                // Store type override (e.g. PKCS12 from the DollBloom unseal flow).
+                resolveSecret("RELEASE_STORE_TYPE").takeIf { it.isNotBlank() }?.let { storeType = it }
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
@@ -178,6 +180,13 @@ android {
                 val requestsRelease =
                     gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
                 if (requestsRelease) {
+                    println(
+                        "LastWave signing probe: SIGNING_KEY blank=" + (base64Key.isBlank()).toString() +
+                            ", RELEASE_STORE_FILE blank=" + (storeFilePath.isBlank()).toString() +
+                            ", STORE_PASSWORD blank=" + (storePasswordProp.isBlank()).toString() +
+                            ", keystoreFile=" + (keystoreFile?.absolutePath ?: "null") +
+                            ", exists=" + (keystoreFile?.exists()?.toString() ?: "n/a")
+                    )
                     throw GradleException(
                         "No release signing key found. Provide SIGNING_KEY (base64 " +
                             "keystore) or RELEASE_STORE_FILE + RELEASE_STORE_PASSWORD + " +
