@@ -16,16 +16,15 @@ on:
   workflow_dispatch:
     inputs:
       tv_build:
-        description: 'TV build (package com.lastwave.app.tv, universal APK)'
+        description: 'TV APK only (unchecked = build BOTH phone + TV)'
         type: boolean
         default: false
 
 jobs:
   build:
-    name: Build Release APK
+    name: Build APKs (phone + TV)
     runs-on: ubuntu-latest
     env:
-      TV_BUILD: ${{ inputs.tv_build }}
       SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
       ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
       RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
@@ -48,43 +47,86 @@ jobs:
 
       - name: Unseal release signing key (DollBloom lock file)
         # Runs only when no signing secrets are configured on the repo. The
-        # encrypted keystore lives in the DollBloom repo and the passphrase is
-        # fetched from DollBloom's workflow at build time — nothing secret is
-        # stored in this repository. Set SIGNING_KEY etc. as repo secrets to
-        # bypass this step entirely.
-        if: env.SIGNING_KEY == '' && env.RELEASE_STORE_FILE == '' && env.RELEASE_STORE_PASSWORD == ''
+        # encrypted keystore lives in the DollBloom repo; the passphrase is
+        # fetched from DollBloom's own workflow at build time — nothing
+        # secret is stored in this repository. The decrypted PKCS#12 is used
+        # directly (AGP reads PKCS#12 stores fine on JDK 9+), so no keytool
+        # conversion is involved. Any failure here degrades gracefully to
+        # debug APKs instead of failing the run.
+        if: env.SIGNING_KEY == '' && env.RELEASE_STORE_PASSWORD == ''
         run: |
           set -euo pipefail
-          DOLLBLOOM_RAW="https://raw.githubusercontent.com/DominatorStufs/DollBloom/master"
-          mkdir -p signing
-          curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/dollbloom_signing.py" -o signing/dollbloom_signing.py
-          curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/keycheck.json" -o signing/keycheck.json
-          curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/dollbloom-release.keystore.enc" -o signing/dollbloom-release.keystore.enc
-          # Passphrase stays at home in the DollBloom repo (android.yml builtin).
-          PASSPHRASE=$(curl -fsSL --retry 3 "$DOLLBLOOM_RAW/.github/workflows/android.yml" \
-            | grep -o "vars.DOLLBLOOM_SIGNING_PASSPHRASE || '[^']*'" \
-            | sed "s/^.*|| '//; s/'$//") || true
-          if [ -z "${PASSPHRASE:-}" ]; then
-            echo "::warning::Could not fetch the DollBloom passphrase — skipping key unseal. Set SIGNING_KEY secret for signed builds."
-            exit 0
-          fi
-          export DOLLBLOOM_SIGNING_PASSPHRASE="$PASSPHRASE"
-          python3 signing/dollbloom_signing.py --repo-root . --passphrase-env DOLLBLOOM_SIGNING_PASSPHRASE \
-            unseal --out-dir signing-unsealed
-          JKS="$PWD/signing-unsealed/dollbloom-release.jks"
-          test -f "$JKS" || { echo "::error::Unseal did not produce the JKS"; exit 1; }
-          # Written to local.properties (read by resolveSecret when env vars are
-          # blank) — step-level env of the build step would override GITHUB_ENV.
-          {
-            echo "RELEASE_STORE_FILE=$JKS"
-            echo "RELEASE_STORE_PASSWORD=$PASSPHRASE"
-            echo "RELEASE_KEY_ALIAS=dollbloom"
-            echo "RELEASE_KEY_PASSWORD=$PASSPHRASE"
-          } >> local.properties
-          rm -f signing/dollbloom_signing.py signing/keycheck.json signing/dollbloom-release.keystore.enc
-          echo "::notice::Release key unsealed from DollBloom lock file (alias dollbloom)."
+          (
+            DOLLBLOOM_RAW="https://raw.githubusercontent.com/DominatorStufs/DollBloom/master"
+            mkdir -p signing
+            for f in dollbloom_signing.py keycheck.json dollbloom-release.keystore.enc; do
+              curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/$f" -o "signing/$f"
+            done
+            # Passphrase lives in DollBloom's own workflow (android.yml builtin).
+            PASSPHRASE=$(curl -fsSL --retry 3 "$DOLLBLOOM_RAW/.github/workflows/android.yml" \
+              | grep -o "vars.DOLLBLOOM_SIGNING_PASSPHRASE || '[^']*'" \
+              | sed "s/^.*|| '//; s/'$//") || true
+            if [ -z "${PASSPHRASE:-}" ]; then
+              echo "::warning::Could not fetch the DollBloom passphrase."
+              exit 3
+            fi
+            export DOLLBLOOM_SIGNING_PASSPHRASE="$PASSPHRASE"
+            python3 - << 'PYEOF'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "signing")
+          import dollbloom_signing as ds
+          root = Path(".")
+          check = ds.load_check(root)
+          args = type("Args", (), {"passphrase_env": "DOLLBLOOM_SIGNING_PASSPHRASE"})()
+          passphrase = ds.resolve_passphrase(args)
+          ds.check_passphrase(passphrase, check)
+          out = Path("signing-unsealed"); out.mkdir(exist_ok=True)
+          p12 = out / "dollbloom-release.p12"
+          p12.write_bytes(ds.decrypt_bytes(ds.read_blob(root), passphrase))
+          (out / "keystore.properties").write_text(
+              "\n".join([
+                  "storeFile=" + str(p12.resolve()),
+                  "storeType=PKCS12",
+                  "storePassword=" + passphrase,
+                  "keyAlias=" + check["key_alias"],
+                  "keyPassword=" + passphrase,
+                  "",
+              ]),
+              encoding="utf-8",
+          )
+          print("Unsealed signing key -> PKCS12 (no keytool involved)")
+          PYEOF
+            test -f signing-unsealed/dollbloom-release.p12 || { echo "::error::Unseal produced no keystore"; exit 3; }
+            # Validate the store with the JDK we already have; broken store ->
+            # debug fallback instead of a half-signed build.
+            keytool -list -keystore signing-unsealed/dollbloom-release.p12 \
+              -storepass "$PASSPHRASE" > /dev/null 2>&1 || {
+              echo "::warning::Unsealed store failed keytool validation."
+              exit 3
+            }
+            ALIAS=$(grep '^keyAlias=' signing-unsealed/keystore.properties | cut -d= -f2)
+            {
+              echo "RELEASE_STORE_FILE=$PWD/signing-unsealed/dollbloom-release.p12"
+              echo "RELEASE_STORE_PASSWORD=$PASSPHRASE"
+              echo "RELEASE_KEY_ALIAS=$ALIAS"
+              echo "RELEASE_KEY_PASSWORD=$PASSPHRASE"
+            } >> local.properties
+            echo "::notice::Release key unsealed from the DollBloom lock file (alias $ALIAS) — signed builds enabled."
+          ) || echo "::warning::Signing key unavailable — falling back to DEBUG APKs (still fully installable)."
 
-      - name: Build Release APK
+      - name: Choose build variant
+        run: |
+          if grep -q "^RELEASE_STORE_FILE=" local.properties 2>/dev/null; then
+            echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
+            echo "Building SIGNED release APKs."
+          else
+            echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
+            echo "::notice::Building DEBUG APKs (signing key unavailable)."
+          fi
+
+      - name: Build Phone APK
+        if: inputs.tv_build != true
         env:
           ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
           LASTWAVE_LYRICS_TOKEN: ${{ secrets.LASTWAVE_LYRICS_TOKEN }}
@@ -93,31 +135,28 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease ${{ inputs.tv_build == true && '-PtvApp=true' || '' }} --stacktrace
-
-      - name: Stage Final APK
-        id: prep_apk
         run: |
-          mkdir -p final_apk
+          ./gradlew assemble${BUILD_VARIANT} --stacktrace
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
-          if [ -z "$VERSION" ]; then
-            VERSION="5.0.0"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
-          if [ "$TV_BUILD" = "true" ]; then
-            echo "Building TV APK (com.lastwave.app.tv) for LastWave v$VERSION"
-            APK_PREFIX="LastWave-TV"
-          else
-            echo "Building APK for LastWave v$VERSION"
-            APK_PREFIX="LastWave"
-          fi
-          echo "apk_prefix=$APK_PREFIX" >> $GITHUB_OUTPUT
-          if [ -f "app/build/outputs/apk/release/app-release-signed.apk" ]; then
-            cp app/build/outputs/apk/release/app-release-signed.apk final_apk/${APK_PREFIX}-v${VERSION}-release.apk
-          else
-            cp app/build/outputs/apk/release/app-release.apk final_apk/${APK_PREFIX}-v${VERSION}-release.apk
-          fi
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p final_apk
+          cp "app/build/outputs/apk/${BUILD_VARIANT}/app-${BUILD_VARIANT}.apk" "final_apk/LastWave-v${VERSION}-${BUILD_VARIANT}.apk"
+
+      - name: Build TV APK (universal, minSdk 21 for older TVs)
+        env:
+          ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
+          LASTWAVE_LYRICS_TOKEN: ${{ secrets.LASTWAVE_LYRICS_TOKEN }}
+          LASTWAVE_LYRICS_URL: ${{ secrets.LASTWAVE_LYRICS_URL }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=21 --stacktrace
+          VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p final_apk
+          cp "app/build/outputs/apk/${BUILD_VARIANT}/app-${BUILD_VARIANT}.apk" "final_apk/LastWave-TV-v${VERSION}-${BUILD_VARIANT}.apk"
           ls -lh final_apk/
 
       - name: Verify APK signature + publish checksum
@@ -136,9 +175,13 @@ jobs:
           (cd final_apk && sha256sum *.apk > SHA256SUMS.txt)
           cat final_apk/SHA256SUMS.txt
 
-      - name: Upload Release APK
+      - name: Upload APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ${{ steps.prep_apk.outputs.apk_prefix }}-v${{ steps.prep_apk.outputs.version }}-APK
+          name: LastWave-v${{ env.APP_VERSION }}-APKs
           path: final_apk/*
           if-no-files-found: error
+
+      - name: Remove unsealed key material
+        if: always()
+        run: rm -rf signing signing-unsealed

@@ -52,6 +52,10 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
 
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <!-- TV builds ship the same APK; leanback is optional so phones still see it. -->
     <uses-feature
         android:name="android.software.leanback"
