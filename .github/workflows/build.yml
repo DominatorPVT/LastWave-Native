@@ -46,6 +46,44 @@ jobs:
       - name: Grant Gradle execute permission
         run: chmod +x gradlew
 
+      - name: Unseal release signing key (DollBloom lock file)
+        # Runs only when no signing secrets are configured on the repo. The
+        # encrypted keystore lives in the DollBloom repo and the passphrase is
+        # fetched from DollBloom's workflow at build time — nothing secret is
+        # stored in this repository. Set SIGNING_KEY etc. as repo secrets to
+        # bypass this step entirely.
+        if: env.SIGNING_KEY == '' && env.RELEASE_STORE_FILE == '' && env.RELEASE_STORE_PASSWORD == ''
+        run: |
+          set -euo pipefail
+          DOLLBLOOM_RAW="https://raw.githubusercontent.com/DominatorStufs/DollBloom/master"
+          mkdir -p signing
+          curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/dollbloom_signing.py" -o signing/dollbloom_signing.py
+          curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/keycheck.json" -o signing/keycheck.json
+          curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/dollbloom-release.keystore.enc" -o signing/dollbloom-release.keystore.enc
+          # Passphrase stays at home in the DollBloom repo (android.yml builtin).
+          PASSPHRASE=$(curl -fsSL --retry 3 "$DOLLBLOOM_RAW/.github/workflows/android.yml" \
+            | grep -o "vars.DOLLBLOOM_SIGNING_PASSPHRASE || '[^']*'" \
+            | sed "s/^.*|| '//; s/'$//") || true
+          if [ -z "${PASSPHRASE:-}" ]; then
+            echo "::warning::Could not fetch the DollBloom passphrase — skipping key unseal. Set SIGNING_KEY secret for signed builds."
+            exit 0
+          fi
+          export DOLLBLOOM_SIGNING_PASSPHRASE="$PASSPHRASE"
+          python3 signing/dollbloom_signing.py --repo-root . --passphrase-env DOLLBLOOM_SIGNING_PASSPHRASE \
+            unseal --out-dir signing-unsealed
+          JKS="$PWD/signing-unsealed/dollbloom-release.jks"
+          test -f "$JKS" || { echo "::error::Unseal did not produce the JKS"; exit 1; }
+          # Written to local.properties (read by resolveSecret when env vars are
+          # blank) — step-level env of the build step would override GITHUB_ENV.
+          {
+            echo "RELEASE_STORE_FILE=$JKS"
+            echo "RELEASE_STORE_PASSWORD=$PASSPHRASE"
+            echo "RELEASE_KEY_ALIAS=dollbloom"
+            echo "RELEASE_KEY_PASSWORD=$PASSPHRASE"
+          } >> local.properties
+          rm -f signing/dollbloom_signing.py signing/keycheck.json signing/dollbloom-release.keystore.enc
+          echo "::notice::Release key unsealed from DollBloom lock file (alias dollbloom)."
+
       - name: Build Release APK
         env:
           ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
@@ -53,7 +91,7 @@ jobs:
           LASTWAVE_LYRICS_URL: ${{ secrets.LASTWAVE_LYRICS_URL }}
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || 'release_key' }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease ${{ inputs.tv_build == true && '-PtvApp=true' || '' }} --stacktrace
 

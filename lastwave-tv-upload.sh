@@ -43,6 +43,9 @@ GIT_EMAIL=""
 
 # 1 karo to purani history replace karke force push hoga (DHYAAN SE!):
 FORCE_PUSH=0
+
+# Push ke baad signed TV APK build auto-trigger karna (1=haan, 0=haath se):
+TRIGGER_BUILD=1
 # -----------------------------------------------------------------------------
 
 
@@ -114,22 +117,36 @@ resolve_source() {
     return 1
 }
 
-if resolve_source; then
-    ok "Code mil gaya: $SRC"
-else
-    warn "Wahan valid TV code nahi mila — zip khud download karke extract karta hu."
-    mkdir -p "$SOURCE_DIR" || die "Folder nahi bana paaya: $SOURCE_DIR"
-    ZIP_PATH="$SOURCE_DIR/LastWave-TV-files.zip"
-    say "Zip download ho rahi hai..."
-    curl -fL --retry 3 -o "$ZIP_PATH" "$ZIP_URL" || die "Zip download fail. Manually download karke $SOURCE_DIR mein extract kar do."
-    # Sanity check: zip hamesha ~120 KB+ hoti hai — corrupt/empty download pakdo.
+# Pehle GitHub se FRESH zip try karo — taaki purane extract kiye folder pe
+# depend na karna pade (main zip update karta rahunga, script same rahegi).
+mkdir -p "$SOURCE_DIR" || die "Folder nahi bana paaya: $SOURCE_DIR"
+FRESH_DIR="$SOURCE_DIR/.fresh-tv-code"
+rm -rf "$FRESH_DIR"; mkdir -p "$FRESH_DIR"
+ZIP_PATH="$FRESH_DIR/LastWave-TV-files.zip"
+say "Fresh zip download kar raha hu (GitHub se latest)..."
+if curl -fL --retry 3 -o "$ZIP_PATH" "$ZIP_URL"; then
     ZIP_BYTES=$(wc -c < "$ZIP_PATH")
-    [ "$ZIP_BYTES" -ge 100000 ] || die "Downloaded zip bahut chhoti hai ($ZIP_BYTES bytes) — download corrupt lagta hai. Dobara try karo."
-    ok "Zip download ho gayi ($(( ZIP_BYTES / 1024 )) KB)"
-    unzip -oq "$ZIP_PATH" -d "$SOURCE_DIR" || die "Unzip fail hua."
-    rm -f "$ZIP_PATH"
-    resolve_source || die "Extract ke baad bhi code nahi mila. Manually check karo: $SOURCE_DIR"
-    ok "Zip extract ho gayi: $SRC"
+    if [ "$ZIP_BYTES" -ge 100000 ]; then
+        ok "Fresh zip mil gayi ($(( ZIP_BYTES / 1024 )) KB) — extract kar raha hu..."
+        unzip -oq "$ZIP_PATH" -d "$FRESH_DIR" || die "Unzip fail hua."
+        rm -f "$ZIP_PATH"
+        SRC="$FRESH_DIR"
+    else
+        warn "Downloaded zip chhoti thi ($ZIP_BYTES bytes) — local folder pe fallback."
+        SRC=""
+    fi
+else
+    warn "Download fail hua — local extracted folder pe fallback."
+    SRC=""
+fi
+
+# Fallback: local folder (direct ya ek level andar)
+if [ -z "$SRC" ]; then
+    if resolve_source; then
+        ok "Local code use kar raha hu: $SRC"
+    else
+        die "Na fresh zip mili na valid local code. Internet check karo ya $SOURCE_DIR mein zip manually extract karo."
+    fi
 fi
 
 # ---- 6. Repo clone ----------------------------------------------------------
@@ -197,4 +214,25 @@ else
     die "Fix: remote branch aage nikal chuki hai. FORCE_PUSH=1 ke saath chalao:
          FORCE_PUSH=1 ./lastwave-tv-upload.sh   (DHYAAN SE — purani main overwrite hogi)
          Ya pehle normal push kara ke dekho."
+fi
+
+# ---- 10. TV build trigger (agar repo pe workflow hai) ------------------------
+if [ "$TRIGGER_BUILD" = "1" ]; then
+    say "Signed TV APK build trigger kar raha hu (Actions workflow)..."
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/$REPO/actions/workflows/build.yml/dispatches" \
+        -d "{\"ref\":\"$BRANCH\",\"inputs\":{\"tv_build\":true}}")
+    if [ "$HTTP_CODE" = "204" ]; then
+        ok "Build queue ho gaya!"
+        echo ""
+        printf "${GREEN}  Signed TV APK yahan milega (2-3 min baad artifact):${NC}\n"
+        echo "  https://github.com/$REPO/actions"
+        echo ""
+        echo "  Package: com.lastwave.app.tv (phone app ke saath saath install rahega)"
+    else
+        warn "Auto-trigger nahi hua (HTTP $HTTP_CODE — token mein actions:write chahiye)."
+        echo "  Manual: https://github.com/$REPO/actions -> Build LastWave APK -> Run workflow -> 'TV build' tick"
+    fi
 fi
