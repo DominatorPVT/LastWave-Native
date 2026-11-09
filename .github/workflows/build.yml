@@ -26,7 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TV_BUILD: ${{ inputs.tv_build }}
-    env:
       SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
       ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
       RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
