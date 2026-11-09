@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added & Improved
+- **Android TV (Leanback) Support:** LastWave now runs natively on Android TV, Google TV and Fire TV from the same APK. A dedicated D-pad home (Now Playing hero, top tracks and recently played from your listening history, remote-keyboard search) launches from the TV home screen, driven by the same process-wide MusicPlayer — queue, radio and the media session behave exactly as on phone. The phone launcher is untouched and the TV activity is declared separately, so phones list only the touch UI.
 - **Recommendation Provider Switch:** Settings → Spotify now offers a recommendation provider choice. Pick Spotify to seed Home shelves, Quick Picks, radio, Discover and mixes from your Spotify taste; the switch applies everywhere and invalidates the cached home feed. Spotify only supplies the seeds — tracks are matched back to playable YouTube Music, and any failure or empty answer silently keeps the YouTube Music graph, so playback never breaks.
 
 ## [5.0.0] - 2026-10-30
