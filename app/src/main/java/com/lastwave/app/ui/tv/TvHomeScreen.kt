@@ -131,7 +131,7 @@ private fun TvLogoBadge(modifier: Modifier = Modifier) {
     val discColor = MaterialTheme.colorScheme.primary
     Canvas(modifier = modifier) {
         val disc = size.minDimension
-        drawCircle(color = discColor, size = Size(disc, disc))
+        drawCircle(color = discColor, radius = disc / 2f)
         // Logo proportions: bar heights follow the 4-bar wave mark, centred vertically.
         val heights = floatArrayOf(0.50f, 0.68f, 0.68f, 0.55f)
         val barWidth = disc * 0.105f
