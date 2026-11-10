@@ -152,7 +152,7 @@ class TvHomeViewModel @Inject constructor(
                     lyricsState = LyricsUiState.Loading
                 }
             }
-            val durationSeconds = track.durationMs?.takeIf { it > 0 }?.let { it / 1000 }
+            val durationSeconds = track.durationMs?.takeIf { it > 0 }?.let { (it / 1000).toInt() }
             val result = runCatching {
                 lyricsRepository.getLyrics(
                     title = track.title,
@@ -171,6 +171,7 @@ class TvHomeViewModel @Inject constructor(
             spinner.join()
             if (requestId != lyricsRequestId) return@launch
             lyricsState = when (result) {
+                com.lastwave.app.data.lyrics.LyricsResult.Empty -> LyricsUiState.Empty
                 is com.lastwave.app.data.lyrics.LyricsResult.Success ->
                     if (result.lines.isEmpty() && result.plainLyrics.isNullOrBlank()) {
                         LyricsUiState.Empty

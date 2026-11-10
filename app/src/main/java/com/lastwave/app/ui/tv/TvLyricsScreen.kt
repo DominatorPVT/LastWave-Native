@@ -59,7 +59,7 @@ fun TvLyricsTab(
     viewModel: TvHomeViewModel,
     railHomeFocus: androidx.compose.ui.focus.FocusRequester,
 ) {
-    val lyrics by viewModel.lyricsState
+    val lyrics = viewModel.lyricsState
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val track = chrome.current
 
