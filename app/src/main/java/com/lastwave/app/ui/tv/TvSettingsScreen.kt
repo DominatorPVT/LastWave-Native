@@ -90,7 +90,7 @@ class TvSettingsViewModel @Inject constructor(
             } else {
                 yt.accountName.ifBlank { "Google account" }
             },
-            spotifyConnected = spdc.isNotBlank(),
+            spotifyConnected = !spdc.isNullOrBlank(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TvSettingsUiState())
 
