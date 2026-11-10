@@ -1463,7 +1463,7 @@
     <string name="tv_account_sign_out">Sign out of %1$s</string>
     <string name="tv_login_youtube_title">Sign in to YouTube</string>
     <string name="tv_login_spotify_title">Sign in to Spotify</string>
-    <string name="tv_login_instructions">Arrows move the pointer, OK clicks, Page up/down scrolls, Back goes back or exits. The screen closes by itself once you are signed in.</string>
+    <string name="tv_login_instructions">Arrows move the pointer, OK clicks, hold OK and move to scroll the page, Page/CH up-down also scroll, Back goes back or exits. The screen closes by itself once you are signed in.</string>
     <string name="tv_login_cancel_hint">Back cancels</string>
     <string name="tv_lyrics_scroll_hint">Press up or down to scroll lyrics</string>
     <string name="tv_tab_library">Library</string>

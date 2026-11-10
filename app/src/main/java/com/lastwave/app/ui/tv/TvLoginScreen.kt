@@ -79,6 +79,9 @@ private const val YT_LOGIN_URL =
         "&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue" +
         "%26app%3Ddesktop%26hl%3Den%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F&hl=en"
 
+/** Hold OK longer than this and arrow moves become page drags (scroll). */
+private const val DRAG_THRESHOLD_MS = 450L
+
 /**
  * Full-screen login for the TV: the **same flow as the phone build**, driven
  * by a virtual mouse cursor so the remote can operate it.
@@ -120,6 +123,11 @@ fun TvLoginScreen(
     // until the first D-pad press places it at the page center.
     var cursorX by remember { mutableStateOf(Float.NaN) }
     var cursorY by remember { mutableStateOf(Float.NaN) }
+    // OK-gesture state: quick press = click, held press + arrow moves =
+    // drag the page (scrolls without any PageUp/PageDown button).
+    var okDownAt by remember { mutableStateOf(0L) }
+    var pointerDown by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val density = LocalDensity.current
     val cursorSize = 22.dp
@@ -131,6 +139,21 @@ fun TvLoginScreen(
     var capturedSpdc by remember { mutableStateOf<String?>(null) }
 
     BackHandler {
+        // If a drag was in progress, lift the touch before leaving so the
+        // page is not left holding a pressed pointer.
+        val held = webView
+        if (pointerDown && held != null && !cursorX.isNaN()) {
+            val upNow = SystemClock.uptimeMillis()
+            val up = MotionEvent.obtain(
+                upNow, upNow, MotionEvent.ACTION_UP,
+                cursorX, cursorY, 1f, 1f, 0, 1f, 1f, 0, 0,
+            )
+            held.dispatchTouchEvent(up)
+            up.recycle()
+        }
+        pointerDown = false
+        dragging = false
+        okDownAt = 0L
         val wv = webView
         if (wv != null && wv.canGoBack()) wv.goBack() else onCancel()
     }
@@ -479,17 +502,37 @@ fun TvLoginScreen(
                         .onPreviewKeyEvent { event ->
                             val ke = event.nativeKeyEvent
                             if (ke.action != android.view.KeyEvent.ACTION_DOWN) {
-                                // Swallow the matching ACTION_UP of the keys we
-                                // handle so they never leak into Compose focus.
+                                // Key release: OK/ENTER lifts the touch — a
+                                // quick hold releases as a click, a long hold
+                                // (drag) releases where the drag stopped. Every
+                                // other handled key just gets its UP swallowed.
+                                if (ke.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                    ke.keyCode == android.view.KeyEvent.KEYCODE_ENTER
+                                ) {
+                                    val held = webView
+                                    if (pointerDown && held != null && !cursorX.isNaN()) {
+                                        val upNow = SystemClock.uptimeMillis()
+                                        val up = MotionEvent.obtain(
+                                            upNow, upNow, MotionEvent.ACTION_UP,
+                                            cursorX, cursorY, 1f, 1f, 0, 1f, 1f, 0, 0,
+                                        )
+                                        held.dispatchTouchEvent(up)
+                                        up.recycle()
+                                    }
+                                    pointerDown = false
+                                    dragging = false
+                                    okDownAt = 0L
+                                    return@onPreviewKeyEvent true
+                                }
                                 return@onPreviewKeyEvent when (ke.keyCode) {
                                     android.view.KeyEvent.KEYCODE_DPAD_UP,
                                     android.view.KeyEvent.KEYCODE_DPAD_DOWN,
                                     android.view.KeyEvent.KEYCODE_DPAD_LEFT,
                                     android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
-                                    android.view.KeyEvent.KEYCODE_DPAD_CENTER,
-                                    android.view.KeyEvent.KEYCODE_ENTER,
                                     android.view.KeyEvent.KEYCODE_PAGE_UP,
                                     android.view.KeyEvent.KEYCODE_PAGE_DOWN,
+                                    android.view.KeyEvent.KEYCODE_CHANNEL_UP,
+                                    android.view.KeyEvent.KEYCODE_CHANNEL_DOWN,
                                     -> true
                                     else -> false
                                 }
@@ -524,12 +567,26 @@ fun TvLoginScreen(
                                     }
                                     cursorX = nx.coerceIn(0f, (wv.width - 1).coerceAtLeast(0).toFloat())
                                     cursorY = ny.coerceIn(0f, (wv.height - 1).coerceAtLeast(0).toFloat())
+                                    if (pointerDown && dragging && !cursorX.isNaN()) {
+                                        // OK is held: arrows drag the page with
+                                        // the pointer — this is the scroll.
+                                        val moveNow = SystemClock.uptimeMillis()
+                                        val move = MotionEvent.obtain(
+                                            moveNow, moveNow, MotionEvent.ACTION_MOVE,
+                                            cursorX, cursorY, 1f, 1f, 0, 1f, 1f, 0, 0,
+                                        )
+                                        wv.dispatchTouchEvent(move)
+                                        move.recycle()
+                                    }
                                     true
                                 }
                                 android.view.KeyEvent.KEYCODE_DPAD_CENTER,
                                 android.view.KeyEvent.KEYCODE_ENTER,
                                 -> {
-                                    // OK = a real touch tap at the pointer.
+                                    // OK presses a real touch at the pointer.
+                                    // Quick press+release = click. Hold past the
+                                    // threshold and move with the arrows = drag
+                                    // (scrolls the page like a finger swipe).
                                     val centerX =
                                         if (wv.width > 0) wv.width / 2f else 400f
                                     val centerY =
@@ -538,28 +595,30 @@ fun TvLoginScreen(
                                     val y = if (cursorY.isNaN()) centerY else cursorY
                                     cursorX = x
                                     cursorY = y
-                                    wv.requestFocus()
-                                    val now = SystemClock.uptimeMillis()
-                                    val down = MotionEvent.obtain(
-                                        now, now, MotionEvent.ACTION_DOWN, x, y,
-                                        1f, 1f, 0, 1f, 1f, 0, 0,
-                                    )
-                                    wv.dispatchTouchEvent(down)
-                                    down.recycle()
-                                    // Lift after a short beat so the page sees
-                                    // a proper press-release gesture.
-                                    wv.post {
-                                        val up = MotionEvent.obtain(
-                                            now, now + 60, MotionEvent.ACTION_UP, x, y,
+                                    if (!pointerDown) {
+                                        okDownAt = SystemClock.uptimeMillis()
+                                        dragging = false
+                                        pointerDown = true
+                                        wv.requestFocus()
+                                        val downNow = SystemClock.uptimeMillis()
+                                        val down = MotionEvent.obtain(
+                                            downNow, downNow, MotionEvent.ACTION_DOWN, x, y,
                                             1f, 1f, 0, 1f, 1f, 0, 0,
                                         )
-                                        wv.dispatchTouchEvent(up)
-                                        up.recycle()
+                                        wv.dispatchTouchEvent(down)
+                                        down.recycle()
+                                    } else if (!dragging &&
+                                        SystemClock.uptimeMillis() - okDownAt > DRAG_THRESHOLD_MS
+                                    ) {
+                                        // Auto-repeat while holding: switch to drag.
+                                        dragging = true
                                     }
                                     true
                                 }
                                 android.view.KeyEvent.KEYCODE_PAGE_UP,
                                 android.view.KeyEvent.KEYCODE_PAGE_DOWN,
+                                android.view.KeyEvent.KEYCODE_CHANNEL_UP,
+                                android.view.KeyEvent.KEYCODE_CHANNEL_DOWN,
                                 -> {
                                     wv.requestFocus()
                                     wv.dispatchKeyEvent(
