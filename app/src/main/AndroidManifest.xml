@@ -56,6 +56,12 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- TV builds lower minSdk to 21; the Cast framework declares minSdk 23.
+         Cast is initialized lazily (initializeCast, runCatching-guarded) and
+         never on the TV flow, so overriding the merger check is safe here. -->
+    <uses-sdk
+        tools:overrideLibrary="com.google.android.gms.cast.framework,com.google.android.gms.cast,com.google.android.gms.cast.framework.media" />
+
     <!-- TV builds ship the same APK; leanback is optional so phones still see it. -->
     <uses-feature
         android:name="android.software.leanback"
