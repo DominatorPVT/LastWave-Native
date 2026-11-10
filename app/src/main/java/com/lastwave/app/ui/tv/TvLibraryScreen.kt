@@ -132,10 +132,32 @@ fun TvLibraryTab(
                             icon = Icons.Rounded.LibraryMusic,
                             expanded = expanded,
                             modifier = if (index == 0) Modifier.focusRequester(entry) else Modifier,
-                            onClick = { expandedId = if (expanded) null else playlist.id },
+                            onClick = {
+                                if (expanded) {
+                                    expandedId = null
+                                } else {
+                                    expandedId = playlist.id
+                                    // YouTube-only playlists arrive as
+                                    // metadata-only summaries (no songs) — the
+                                    // phone fetches them on open and they
+                                    // stream into the shared list. Same here.
+                                    if (playlist.tracks.isEmpty() && playlist.id < 0L) {
+                                        playlistsViewModel.loadDetail(playlist.id)
+                                    }
+                                }
+                            },
                         )
                         if (expanded) {
                             Spacer(modifier = Modifier.size(4.dp))
+                            if (playlist.tracks.isEmpty() && state.isDetailLoading) {
+                                // YouTube playlist still fetching its songs.
+                                TvLibraryTrackRow(
+                                    indexLabel = "",
+                                    title = stringResource(R.string.tv_library_loading_songs),
+                                    artist = "",
+                                    onClick = {},
+                                )
+                            }
                             TvLibraryRow(
                                 title = stringResource(R.string.tv_library_play_all),
                                 subtitle = "",

@@ -1472,4 +1472,5 @@
     <string name="tv_library_play_all">Play all</string>
     <string name="tv_library_one_track">1 track</string>
     <string name="tv_library_track_count">%1$d tracks</string>
+    <string name="tv_library_loading_songs">Loading songs...</string>
 </resources>

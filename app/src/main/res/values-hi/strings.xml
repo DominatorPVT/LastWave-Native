@@ -1158,4 +1158,5 @@
     <string name="tv_library_play_all">सब चलाएँ</string>
     <string name="tv_library_one_track">1 ट्रैक</string>
     <string name="tv_library_track_count">%1$d ट्रैक</string>
+    <string name="tv_library_loading_songs">गाने लोड हो रहे हैं...</string>
 </resources>
