@@ -337,22 +337,16 @@ private fun TvNavRail(
             onClick = { onSelect(TvTab.HOME) },
         )
         TvRailItem(
-            icon = Icons.AutoMirrored.Rounded.QueueMusic,
-            label = stringResource(R.string.tv_tab_queue),
-            selected = selectedTab == TvTab.QUEUE,
-            onClick = { onSelect(TvTab.QUEUE) },
-        )
-        TvRailItem(
-            icon = Icons.AutoMirrored.Rounded.QueueMusic,
-            label = stringResource(R.string.tv_tab_library),
-            selected = selectedTab == TvTab.LIBRARY,
-            onClick = { onSelect(TvTab.LIBRARY) },
-        )
-        TvRailItem(
             icon = Icons.Rounded.Search,
             label = stringResource(R.string.tv_tab_search),
             selected = selectedTab == TvTab.SEARCH,
             onClick = { onSelect(TvTab.SEARCH) },
+        )
+        TvRailItem(
+            icon = Icons.Rounded.LibraryMusic,
+            label = stringResource(R.string.tv_tab_library),
+            selected = selectedTab == TvTab.LIBRARY,
+            onClick = { onSelect(TvTab.LIBRARY) },
         )
         TvRailItem(
             icon = Icons.Rounded.Settings,
