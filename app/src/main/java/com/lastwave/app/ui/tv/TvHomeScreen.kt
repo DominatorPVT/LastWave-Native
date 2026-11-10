@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -93,6 +94,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -271,6 +273,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         onSelectSearch = { tab = TvTab.SEARCH },
                     )
                     TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
+                    TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
                     TvTab.SEARCH -> TvSearchTab(viewModel)
                     TvTab.SETTINGS -> TvSettingsTab()
                 }
@@ -279,29 +282,24 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
     }
 }
 
-private enum class TvTab { HOME, QUEUE, SEARCH, SETTINGS }
+private enum class TvTab { HOME, QUEUE, LYRICS, SEARCH, SETTINGS }
 
 /** Brand mark: lime disc with the four-bar equalizer, drawn in place (no bitmap). */
 @Composable
 private fun TvLogoBadge(modifier: Modifier = Modifier) {
-    val discColor = MaterialTheme.colorScheme.primary
-    Canvas(modifier = modifier) {
-        val disc = size.minDimension
-        drawCircle(color = discColor, radius = disc / 2f)
-        // Logo proportions: bar heights follow the 4-bar wave mark, centred vertically.
-        val heights = floatArrayOf(0.50f, 0.68f, 0.68f, 0.55f)
-        val barWidth = disc * 0.105f
-        val gap = disc * 0.082f
-        val startX = (disc - (heights.size * barWidth + (heights.size - 1) * gap)) / 2f
-        heights.forEachIndexed { index, barHeight ->
-            val barHeightPx = disc * barHeight
-            drawRoundRect(
-                color = Color(0xFF001628),
-                topLeft = Offset(startX + index * (barWidth + gap), (disc - barHeightPx) / 2f),
-                size = Size(barWidth, barHeightPx),
-                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
-            )
-        }
+    // The original LastWave mark, exactly as the launcher draws it: the true
+    // 4-bar logo vector on the brand lime disc (no canvas approximation).
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color(0xFFFFC9FB00)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_logo),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(0.72f),
+        )
     }
 }
 
@@ -335,6 +333,12 @@ private fun TvNavRail(
             label = stringResource(R.string.tv_tab_queue),
             selected = selectedTab == TvTab.QUEUE,
             onClick = { onSelect(TvTab.QUEUE) },
+        )
+        TvRailItem(
+            icon = Icons.Rounded.MusicNote,
+            label = stringResource(R.string.tv_tab_lyrics),
+            selected = selectedTab == TvTab.LYRICS,
+            onClick = { onSelect(TvTab.LYRICS) },
         )
         TvRailItem(
             icon = Icons.Rounded.Search,
@@ -423,6 +427,13 @@ private fun TvHomeTab(
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item(key = "greeting") { TvGreeting() }
+        item(key = "hero") {
+            TvNowPlayingHero(
+                viewModel = viewModel,
+                playFocus = playFocus,
+                onSelectSearch = onSelectSearch,
+            )
+        }
         if (viewModel.homeSuggestions.isNotEmpty()) {
             item(key = "suggested-header") {
                 TvSectionTitle(stringResource(R.string.tv_suggested_for_you))
@@ -430,13 +441,6 @@ private fun TvHomeTab(
             item(key = "suggested-row") {
                 TvSuggestionShelf(tracks = viewModel.homeSuggestions, onPlay = viewModel::playTrack)
             }
-        }
-        item(key = "hero") {
-            TvNowPlayingHero(
-                viewModel = viewModel,
-                playFocus = playFocus,
-                onSelectSearch = onSelectSearch,
-            )
         }
         if (viewModel.topTracks.isNotEmpty()) {
             item(key = "top-header") { TvSectionTitle(stringResource(R.string.tv_top_tracks)) }
@@ -487,7 +491,7 @@ private fun TvGreeting() {
 }
 
 @Composable
-private fun TvSectionTitle(title: String) {
+internal fun TvSectionTitle(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleLarge,
@@ -604,19 +608,23 @@ private fun TvNowPlayingHero(
                     val fraction = if (progress.durationMs > 0) {
                         progress.positionMs.toFloat() / progress.durationMs
                     } else 0f
-                    val barHeight = if (seekBarFocused) 8.dp else 4.dp
+                    val barHeight by animateDpAsState(
+                        targetValue = if (seekBarFocused) 10.dp else 6.dp,
+                        animationSpec = LiftShadowSpring,
+                        label = "tvSeekHeight",
+                    )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(barHeight)
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(percent = 50))
                             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(fraction.coerceIn(0f, 1f))
                             .height(barHeight)
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(percent = 50))
                             .background(MaterialTheme.colorScheme.primary),
                     )
                 }

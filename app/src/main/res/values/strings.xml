@@ -1445,4 +1445,11 @@
     <string name="tv_settings_remote_tips_body">Media keys work anywhere on this screen. LEFT returns to the side menu from any row. BACK goes back to Home. In the queue, press OK on a song to jump to it.</string>
 
     <string name="tv_suggested_for_you">Suggested for you</string>
+
+    <string name="tv_tab_lyrics">Lyrics</string>
+    <string name="tv_lyrics_empty">Play a song and its lyrics will appear here</string>
+    <string name="tv_lyrics_loading">Searching lyrics…</string>
+    <string name="tv_lyrics_not_found">No lyrics found for this song</string>
+    <string name="tv_lyrics_retry">Retry</string>
+    <string name="tv_lyrics_source">Lyrics: %1$s</string>
 </resources>

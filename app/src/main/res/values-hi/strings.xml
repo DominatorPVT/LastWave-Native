@@ -1133,4 +1133,10 @@
     <string name="tv_settings_remote_tips">रिमोट टिप्स</string>
     <string name="tv_settings_remote_tips_body">मीडिया बटन हर जगह काम करते हैं। किसी भी row से LEFT दबाने पर साइड मेन्यू खुलेगा। BACK दबाने पर Home। कतार में किसी गाने पर OK दबाकर वहीं से चलाएँ।</string>
     <string name="tv_suggested_for_you">आपके लिए सुझाए गए</string>
+    <string name="tv_tab_lyrics">लिरिक्स</string>
+    <string name="tv_lyrics_empty">कोई गाना चलाएं, उसके बोल यहां दिखेंगे</string>
+    <string name="tv_lyrics_loading">लिरिक्स खोज रहे हैं…</string>
+    <string name="tv_lyrics_not_found">इस गाने के लिए लिरिक्स नहीं मिले</string>
+    <string name="tv_lyrics_retry">फिर कोशिश करें</string>
+    <string name="tv_lyrics_source">लिरिक्स: %1$s</string>
 </resources>
