@@ -52,6 +52,12 @@ class TvHomeViewModel @Inject constructor(
     var isSearching by mutableStateOf(false)
         private set
 
+    /** BitChord-style suggestions: the YouTube Music home feed, chart fallback. */
+    var homeSuggestions by mutableStateOf<List<YouTubeMusicTrack>>(emptyList())
+        private set
+    var suggestionsLoading by mutableStateOf(true)
+        private set
+
     /** Kept as its own low-frequency flow so the 60 ms progress ticker never reaches the UI. */
     val shuffleEnabled = musicPlayer.state
         .map { it.shuffleEnabled }
@@ -73,6 +79,17 @@ class TvHomeViewModel @Inject constructor(
             // Recently played keeps its own identity: drop entries already shown as top tracks.
             recentTracks = recent.filterNot { row -> top.any { it.trackKey == row.trackKey } }
                 .take(TOP_ROW_LIMIT)
+        }
+        viewModelScope.launch {
+            // Personalized YT Music home feed first; if it comes back empty
+            // (signed out / blocked), fall back to the global charts so the TV
+            // home always opens with concrete music, never a random pick.
+            val personalized = runCatching { innerTube.fetchHomeSongs() }.getOrDefault(emptyList())
+            val suggestions = personalized.ifEmpty {
+                runCatching { innerTube.fetchCharts() }.getOrDefault(emptyList())
+            }
+            homeSuggestions = suggestions.distinctBy { it.videoId }.take(SUGGESTION_LIMIT)
+            suggestionsLoading = false
         }
         viewModelScope.launch {
             searchQueryInternal
@@ -125,6 +142,7 @@ class TvHomeViewModel @Inject constructor(
 
     companion object {
         private const val TOP_ROW_LIMIT = 24
+        private const val SUGGESTION_LIMIT = 24
         const val TV_SOURCE_LABEL = "LastWave TV"
     }
 }

@@ -6,11 +6,14 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -136,7 +139,7 @@ private val LiftScaleSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 42
 private val LiftShadowSpring = spring<Dp>(dampingRatio = 1f, stiffness = 420f)
 private const val SHELF_GAP_DP = 16
 
-/** tvOS-style focus: the focused element grows and casts a soft shadow. */
+/** tvOS-style focus: the focused element grows, casts a soft shadow and gains a brand ring. */
 @Composable
 internal fun Modifier.tvLift(
     focused: Boolean,
@@ -159,6 +162,11 @@ internal fun Modifier.tvLift(
         animationSpec = LiftShadowSpring,
         label = "tvLiftShadow",
     )
+    val ring by animateColorAsState(
+        targetValue = if (focused && !pressed) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(durationMillis = 120),
+        label = "tvLiftRing",
+    )
     return this
         .zIndex(if (focused) 1f else 0f)
         .graphicsLayer {
@@ -170,6 +178,8 @@ internal fun Modifier.tvLift(
             ambientShadowColor = Color.Black
             spotShadowColor = Color.Black
         }
+        // Visible focus line: users on a D-pad always know which element is active.
+        .border(3.dp, ring, shape)
 }
 
 /**
@@ -413,6 +423,14 @@ private fun TvHomeTab(
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item(key = "greeting") { TvGreeting() }
+        if (viewModel.homeSuggestions.isNotEmpty()) {
+            item(key = "suggested-header") {
+                TvSectionTitle(stringResource(R.string.tv_suggested_for_you))
+            }
+            item(key = "suggested-row") {
+                TvSuggestionShelf(tracks = viewModel.homeSuggestions, onPlay = viewModel::playTrack)
+            }
+        }
         item(key = "hero") {
             TvNowPlayingHero(
                 viewModel = viewModel,
@@ -724,6 +742,63 @@ private fun TvTransportButton(
  * inside the shelf so nothing double-scrolls.
  */
 @OptIn(ExperimentalFoundationApi::class)
+/**
+ * BitChord-style suggestion shelf: a horizontal run of [TvTrackCard]s fed by the
+ * YouTube Music home feed (chart fallback), placed at the very top of the home
+ * tab so the screen opens with concrete music, not an empty shell.
+ */
+@Composable
+private fun TvSuggestionShelf(tracks: List<YouTubeMusicTrack>, onPlay: (YouTubeMusicTrack) -> Unit) {
+    val state = rememberLazyListState()
+    var focusedIndex by remember { mutableIntStateOf(-1) }
+    var leadIndex by remember { mutableIntStateOf(0) }
+    val entry = remember { FocusRequester() }
+    val density = LocalDensity.current
+
+    LaunchedEffect(focusedIndex) {
+        if (focusedIndex < 0) return@LaunchedEffect
+        val info = state.layoutInfo
+        val itemSize = info.visibleItemsInfo.firstOrNull()?.size ?: return@LaunchedEffect
+        val gap = with(density) { SHELF_GAP_DP.dp.toPx() }
+        val slots = ((info.viewportSize.width + gap) / (itemSize + gap)).toInt().coerceAtLeast(1)
+        val next = when {
+            focusedIndex < leadIndex -> focusedIndex
+            focusedIndex > leadIndex + slots - 1 -> focusedIndex - slots + 1
+            else -> leadIndex
+        }
+        if (next != leadIndex || state.firstVisibleItemIndex != next || state.firstVisibleItemScrollOffset != 0) {
+            leadIndex = next
+            state.animateScrollToItem(next)
+        }
+    }
+
+    CompositionLocalProvider(LocalBringIntoViewSpec provides TvRowNoScrollSpec) {
+        LazyRow(
+            state = state,
+            horizontalArrangement = Arrangement.spacedBy(SHELF_GAP_DP.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusProperties { onEnter = { runCatching { entry.requestFocus() } } }
+                .focusGroup(),
+        ) {
+            itemsIndexed(tracks, key = { index, track -> "$index-${track.videoId}" }) { index, track ->
+                Box(
+                    modifier = Modifier
+                        .then(if (index == leadIndex) Modifier.focusRequester(entry) else Modifier)
+                        .onFocusChanged { if (it.hasFocus) focusedIndex = index },
+                ) {
+                    TvTrackCard(
+                        title = track.title,
+                        artist = track.artist,
+                        artworkUrl = track.artworkUrl,
+                        onClick = { onPlay(track) },
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun TvShelfRow(rows: List<SongPlayStatsEntity>, onPlay: (SongPlayStatsEntity) -> Unit) {
     val state = rememberLazyListState()

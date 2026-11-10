@@ -1132,4 +1132,5 @@
     <string name="tv_settings_about_version">वर्शन %1$s</string>
     <string name="tv_settings_remote_tips">रिमोट टिप्स</string>
     <string name="tv_settings_remote_tips_body">मीडिया बटन हर जगह काम करते हैं। किसी भी row से LEFT दबाने पर साइड मेन्यू खुलेगा। BACK दबाने पर Home। कतार में किसी गाने पर OK दबाकर वहीं से चलाएँ।</string>
+    <string name="tv_suggested_for_you">आपके लिए सुझाए गए</string>
 </resources>

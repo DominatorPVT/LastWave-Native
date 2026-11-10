@@ -71,6 +71,12 @@ android {
     // phone app instead of replacing it. Still one universal APK.
     val tvApp = (project.findProperty("tvApp") as? String)?.toBoolean() == true
 
+    // App ships English-only: strip every other locale from the APK
+    // (AGP 9 replacement for the deprecated resourceConfigurations).
+    androidResources {
+        localeFilters += setOf("en")
+    }
+
     defaultConfig {
         applicationId = when {
             vivoOrigin -> "com.tencent.qqmusic"

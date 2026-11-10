@@ -1443,4 +1443,6 @@
     <string name="tv_settings_about_version">Version %1$s</string>
     <string name="tv_settings_remote_tips">Remote tips</string>
     <string name="tv_settings_remote_tips_body">Media keys work anywhere on this screen. LEFT returns to the side menu from any row. BACK goes back to Home. In the queue, press OK on a song to jump to it.</string>
+
+    <string name="tv_suggested_for_you">Suggested for you</string>
 </resources>
