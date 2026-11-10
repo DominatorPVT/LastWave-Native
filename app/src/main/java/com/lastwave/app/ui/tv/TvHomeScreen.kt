@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.ShuffleOn
 import androidx.compose.material.icons.rounded.SkipNext
@@ -137,7 +138,7 @@ private const val SHELF_GAP_DP = 16
 
 /** tvOS-style focus: the focused element grows and casts a soft shadow. */
 @Composable
-private fun Modifier.tvLift(
+internal fun Modifier.tvLift(
     focused: Boolean,
     shape: Shape,
     focusedScale: Float = 1.06f,
@@ -200,8 +201,8 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
         }
     }
 
-    // Remote BACK returns from Search to Home instead of leaving the app.
-    BackHandler(enabled = tab == TvTab.SEARCH) {
+    // Remote BACK returns from any tab to Home instead of leaving the app.
+    BackHandler(enabled = tab != TvTab.HOME) {
         keyboard?.hide()
         tab = TvTab.HOME
     }
@@ -259,14 +260,16 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         playFocus = playFocus,
                         onSelectSearch = { tab = TvTab.SEARCH },
                     )
+                    TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
                     TvTab.SEARCH -> TvSearchTab(viewModel)
+                    TvTab.SETTINGS -> TvSettingsTab()
                 }
             }
         }
     }
 }
 
-private enum class TvTab { HOME, SEARCH }
+private enum class TvTab { HOME, QUEUE, SEARCH, SETTINGS }
 
 /** Brand mark: lime disc with the four-bar equalizer, drawn in place (no bitmap). */
 @Composable
@@ -318,10 +321,22 @@ private fun TvNavRail(
             onClick = { onSelect(TvTab.HOME) },
         )
         TvRailItem(
+            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+            label = stringResource(R.string.tv_tab_queue),
+            selected = selectedTab == TvTab.QUEUE,
+            onClick = { onSelect(TvTab.QUEUE) },
+        )
+        TvRailItem(
             icon = Icons.Rounded.Search,
             label = stringResource(R.string.tv_tab_search),
             selected = selectedTab == TvTab.SEARCH,
             onClick = { onSelect(TvTab.SEARCH) },
+        )
+        TvRailItem(
+            icon = Icons.Rounded.Settings,
+            label = stringResource(R.string.tv_tab_settings),
+            selected = selectedTab == TvTab.SETTINGS,
+            onClick = { onSelect(TvTab.SETTINGS) },
         )
         Spacer(modifier = Modifier.weight(1f))
         if (isPlaying) {

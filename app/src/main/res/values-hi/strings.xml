@@ -1112,4 +1112,24 @@
     <string name="tv_search_title">खोज</string>
     <string name="tv_search_hint">गाने, कलाकार…</string>
     <string name="tv_search_no_results">कोई परिणाम नहीं</string>
+    <string name="tv_tab_queue">कतार</string>
+    <string name="tv_tab_settings">सेटिंग्स</string>
+    <string name="tv_queue_title">आगे क्या है</string>
+    <string name="tv_queue_empty">कतार खाली है। Home या Search से गाना चलाएँ।</string>
+    <string name="tv_queue_now_playing">अभी चल रहा है</string>
+    <string name="tv_settings_appearance">दिखावट</string>
+    <string name="tv_settings_amoled">AMOLED ब्लैक</string>
+    <string name="tv_settings_amoled_desc">डार्क थीम में पूरा काला बैकग्राउंड</string>
+    <string name="tv_theme_system">सिस्टम</string>
+    <string name="tv_theme_light">लाइट</string>
+    <string name="tv_theme_dark">डार्क</string>
+    <string name="tv_settings_playback">प्लेबैक</string>
+    <string name="tv_settings_crossfade">क्रॉसफ़ेड</string>
+    <string name="tv_settings_crossfade_desc">एक गाने का अंत अगले गाने में घुल जाए</string>
+    <string name="tv_settings_crossfade_seconds">क्रॉसफ़ेड अवधि: %1$d सेकंड</string>
+    <string name="tv_settings_about">परिचय</string>
+    <string name="tv_settings_about_title">LastWave for Android TV</string>
+    <string name="tv_settings_about_version">वर्शन %1$s</string>
+    <string name="tv_settings_remote_tips">रिमोट टिप्स</string>
+    <string name="tv_settings_remote_tips_body">मीडिया बटन हर जगह काम करते हैं। किसी भी row से LEFT दबाने पर साइड मेन्यू खुलेगा। BACK दबाने पर Home। कतार में किसी गाने पर OK दबाकर वहीं से चलाएँ।</string>
 </resources>
