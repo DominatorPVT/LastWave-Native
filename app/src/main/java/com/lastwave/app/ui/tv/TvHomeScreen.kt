@@ -58,7 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.awaitFrame
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -194,7 +194,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
     // Compose delivers no key events until some node holds focus.
     LaunchedEffect(tab, hasTrack) {
         if (tab != TvTab.HOME) return@LaunchedEffect
-        awaitFrame()
+        withFrameNanos { }
         runCatching {
             if (hasTrack) playFocus.requestFocus() else railHomeFocus.requestFocus()
         }
