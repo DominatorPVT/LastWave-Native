@@ -1452,4 +1452,18 @@
     <string name="tv_lyrics_not_found">No lyrics found for this song</string>
     <string name="tv_lyrics_retry">Retry</string>
     <string name="tv_lyrics_source">Lyrics: %1$s</string>
+
+    <string name="tv_settings_accounts">Accounts</string>
+    <string name="tv_account_youtube">YouTube</string>
+    <string name="tv_account_spotify">Spotify</string>
+    <string name="tv_account_not_signed_in">Not signed in</string>
+    <string name="tv_account_signed_in_as">Signed in as %1$s</string>
+    <string name="tv_account_signed_in">Signed in</string>
+    <string name="tv_account_sign_in">Sign in</string>
+    <string name="tv_account_sign_out">Sign out of %1$s</string>
+    <string name="tv_login_youtube_title">Sign in to YouTube</string>
+    <string name="tv_login_spotify_title">Sign in to Spotify</string>
+    <string name="tv_login_instructions">Use the remote to sign in. This screen closes by itself when you finish.</string>
+    <string name="tv_login_cancel_hint">Back cancels</string>
+    <string name="tv_lyrics_scroll_hint">Press up or down to scroll lyrics</string>
 </resources>

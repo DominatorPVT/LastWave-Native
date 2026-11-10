@@ -22,10 +22,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tv
@@ -53,8 +54,6 @@ import androidx.lifecycle.viewModelScope
 import com.lastwave.app.BuildConfig
 import com.lastwave.app.R
 import com.lastwave.app.data.local.SettingsPreferences
-import com.lastwave.app.data.local.ThemeMode
-import com.lastwave.app.data.repository.ThemeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
@@ -65,37 +64,35 @@ import kotlinx.coroutines.launch
 
 /** The settings that matter on a TV, all backed by the shared stores. */
 data class TvSettingsUiState(
-    val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val amoled: Boolean = false,
     val crossfadeEnabled: Boolean = false,
     val crossfadeSeconds: Int = 5,
+    val ytAccountName: String? = null,
+    val spotifyConnected: Boolean = false,
 )
 
 @HiltViewModel
 class TvSettingsViewModel @Inject constructor(
-    private val themeRepository: ThemeRepository,
     private val settingsPreferences: SettingsPreferences,
+    private val ytAuth: com.lastwave.app.data.ytmusic.YtMusicAuthManager,
+    private val spotifyPreferences: com.lastwave.app.data.spotify.SpotifyPreferences,
 ) : ViewModel() {
 
     val uiState: StateFlow<TvSettingsUiState> = combine(
-        themeRepository.uiState,
         settingsPreferences.settings,
-    ) { theme, misc ->
+        ytAuth.connection,
+        spotifyPreferences.spdc,
+    ) { misc, yt, spdc ->
         TvSettingsUiState(
-            themeMode = theme.themeMode,
-            amoled = theme.amoled,
             crossfadeEnabled = misc.crossfadeEnabled,
             crossfadeSeconds = misc.crossfadeSeconds,
+            ytAccountName = if (yt.cookies.isEmpty()) {
+                null
+            } else {
+                yt.accountName.ifBlank { "Google account" }
+            },
+            spotifyConnected = spdc.isNotBlank(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TvSettingsUiState())
-
-    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch {
-        themeRepository.setThemeMode(mode)
-    }
-
-    fun setAmoled(enabled: Boolean) = viewModelScope.launch {
-        themeRepository.setAmoled(enabled)
-    }
 
     fun setCrossfade(enabled: Boolean) = viewModelScope.launch {
         settingsPreferences.setCrossfadeEnabled(enabled)
@@ -104,76 +101,216 @@ class TvSettingsViewModel @Inject constructor(
     fun setCrossfadeSeconds(seconds: Int) = viewModelScope.launch {
         settingsPreferences.setCrossfadeSeconds(seconds.coerceIn(1, 12))
     }
+
+    /** Called by the TV login WebView once YouTube cookies are present. */
+    fun completeYouTubeLogin(rawCookieHeader: String) = viewModelScope.launch {
+        ytAuth.connect(rawCookieHeader, "Google account", null, null)
+    }
+
+    /** Called by the TV login WebView once the Spotify sp_dc cookie exists. */
+    fun completeSpotifyLogin(spdc: String) = viewModelScope.launch {
+        spotifyPreferences.saveSpdc(spdc)
+    }
+
+    fun signOutYouTube() = viewModelScope.launch {
+        runCatching { ytAuth.signOut() }
+    }
+
+    fun signOutSpotify() = viewModelScope.launch {
+        // Blank sp_dc reads as signed-out everywhere and invalidates the token.
+        spotifyPreferences.saveSpdc("")
+    }
 }
 
 @Composable
 fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
     val settingsViewModel: TvSettingsViewModel = hiltViewModel()
     val ui by settingsViewModel.uiState.collectAsStateWithLifecycle()
+    var loginTarget by remember { mutableStateOf<TvLoginTarget?>(null) }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(start = 48.dp, end = 48.dp, top = 40.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item(key = "title") {
-            Text(
-                text = stringResource(R.string.tv_tab_settings),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-
-        item(key = "appearance-header") {
-            TvSettingsSectionTitle(stringResource(R.string.tv_settings_appearance), Icons.Rounded.Palette)
-        }
-        item(key = "theme") {
-            TvThemeModeRow(selected = ui.themeMode, onSelect = settingsViewModel::setThemeMode)
-        }
-        item(key = "amoled") {
-            TvSettingsRow(
-                icon = Icons.Rounded.Contrast,
-                title = stringResource(R.string.tv_settings_amoled),
-                subtitle = stringResource(R.string.tv_settings_amoled_desc),
-                checked = ui.amoled,
-                onToggle = { settingsViewModel.setAmoled(!ui.amoled) },
-            )
-        }
-
-        item(key = "playback-header") {
-            TvSettingsSectionTitle(stringResource(R.string.tv_settings_playback), Icons.Rounded.GraphicEq)
-        }
-        item(key = "crossfade") {
-            TvSettingsRow(
-                icon = Icons.Rounded.Timer,
-                title = stringResource(R.string.tv_settings_crossfade),
-                subtitle = stringResource(R.string.tv_settings_crossfade_desc),
-                checked = ui.crossfadeEnabled,
-                onToggle = { settingsViewModel.setCrossfade(!ui.crossfadeEnabled) },
-            )
-        }
-        if (ui.crossfadeEnabled) {
-            item(key = "crossfade-seconds") {
-                TvStepperRow(
-                    title = stringResource(R.string.tv_settings_crossfade_seconds, ui.crossfadeSeconds),
-                    value = ui.crossfadeSeconds,
-                    min = 1,
-                    max = 12,
-                    onChange = settingsViewModel::setCrossfadeSeconds,
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 48.dp, end = 48.dp, top = 40.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item(key = "title") {
+                Text(
+                    text = stringResource(R.string.tv_tab_settings),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
+            }
+
+            item(key = "accounts-header") {
+                TvSettingsSectionTitle(stringResource(R.string.tv_settings_accounts), Icons.Rounded.AccountCircle)
+            }
+            item(key = "account-youtube") {
+                TvAccountRow(
+                    title = stringResource(R.string.tv_account_youtube),
+                    status = ui.ytAccountName?.let {
+                        stringResource(R.string.tv_account_signed_in_as, it)
+                    } ?: stringResource(R.string.tv_account_not_signed_in),
+                    connected = ui.ytAccountName != null,
+                    icon = Icons.Rounded.MusicNote,
+                    onClick = { loginTarget = TvLoginTarget.YOUTUBE },
+                )
+            }
+            if (ui.ytAccountName != null) {
+                item(key = "account-youtube-out") {
+                    TvSignOutRow(label = stringResource(R.string.tv_account_youtube), onClick = settingsViewModel::signOutYouTube)
+                }
+            }
+            item(key = "account-spotify") {
+                TvAccountRow(
+                    title = stringResource(R.string.tv_account_spotify),
+                    status = if (ui.spotifyConnected) {
+                        stringResource(R.string.tv_account_signed_in)
+                    } else {
+                        stringResource(R.string.tv_account_not_signed_in)
+                    },
+                    connected = ui.spotifyConnected,
+                    icon = Icons.Rounded.GraphicEq,
+                    onClick = { loginTarget = TvLoginTarget.SPOTIFY },
+                )
+            }
+            if (ui.spotifyConnected) {
+                item(key = "account-spotify-out") {
+                    TvSignOutRow(label = stringResource(R.string.tv_account_spotify), onClick = settingsViewModel::signOutSpotify)
+                }
+            }
+
+            item(key = "playback-header") {
+                TvSettingsSectionTitle(stringResource(R.string.tv_settings_playback), Icons.Rounded.Timer)
+            }
+            item(key = "crossfade") {
+                TvSettingsRow(
+                    icon = Icons.Rounded.Timer,
+                    title = stringResource(R.string.tv_settings_crossfade),
+                    subtitle = stringResource(R.string.tv_settings_crossfade_desc),
+                    checked = ui.crossfadeEnabled,
+                    onToggle = { settingsViewModel.setCrossfade(!ui.crossfadeEnabled) },
+                )
+            }
+            if (ui.crossfadeEnabled) {
+                item(key = "crossfade-seconds") {
+                    TvStepperRow(
+                        title = stringResource(R.string.tv_settings_crossfade_seconds, ui.crossfadeSeconds),
+                        value = ui.crossfadeSeconds,
+                        min = 1,
+                        max = 12,
+                        onChange = settingsViewModel::setCrossfadeSeconds,
+                    )
+                }
+            }
+
+            item(key = "about-header") {
+                TvSettingsSectionTitle(stringResource(R.string.tv_settings_about), Icons.Rounded.Info)
+            }
+            item(key = "about-card") {
+                TvAboutCard()
+            }
+            item(key = "remote-help") {
+                TvRemoteTipsCard()
             }
         }
 
-        item(key = "about-header") {
-            TvSettingsSectionTitle(stringResource(R.string.tv_settings_about), Icons.Rounded.Info)
+        loginTarget?.let { target ->
+            TvLoginScreen(
+                target = target,
+                onComplete = { credential ->
+                    when (target) {
+                        TvLoginTarget.YOUTUBE -> settingsViewModel.completeYouTubeLogin(credential)
+                        TvLoginTarget.SPOTIFY -> settingsViewModel.completeSpotifyLogin(credential)
+                    }
+                    loginTarget = null
+                },
+                onCancel = { loginTarget = null },
+            )
         }
-        item(key = "about-card") {
-            TvAboutCard()
+    }
+}
+
+/** Account line: status under the service name; OK opens the login WebView. */
+@Composable
+private fun TvAccountRow(
+    title: String,
+    status: String,
+    connected: Boolean,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .tvLift(focused = isFocused, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isFocused) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow)
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (connected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        item(key = "remote-help") {
-            TvRemoteTipsCard()
-        }
+        Text(
+            text = stringResource(R.string.tv_account_sign_in),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun TvSignOutRow(label: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .tvLift(focused = isFocused, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isFocused) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Logout,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = stringResource(R.string.tv_account_sign_out, label),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -203,56 +340,6 @@ private fun TvSettingsSectionTitle(title: String, icon: ImageVector) {
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
         )
-    }
-}
-
-/** Theme mode: three chips in a focus group — D-pad LEFT/RIGHT walks them. */
-@Composable
-private fun TvThemeModeRow(
-    selected: ThemeMode,
-    onSelect: (ThemeMode) -> Unit,
-) {
-    val modes = remember { listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .focusGroup(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        modes.forEach { mode ->
-            val interaction = remember { MutableInteractionSource() }
-            var isFocused by remember { mutableStateOf(false) }
-            val isSelected = mode == selected
-            Box(
-                modifier = Modifier
-                    .tvLift(focused = isFocused, shape = RoundedCornerShape(14.dp), focusedScale = 1.05f, elevation = 8.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        when {
-                            isSelected -> MaterialTheme.colorScheme.primary
-                            isFocused -> MaterialTheme.colorScheme.surfaceContainerHigh
-                            else -> MaterialTheme.colorScheme.surfaceContainerLow
-                        }
-                    )
-                    .onFocusChanged { isFocused = it.isFocused }
-                    .clickable(interactionSource = interaction, indication = null) { onSelect(mode) }
-                    .padding(horizontal = 22.dp, vertical = 14.dp),
-            ) {
-                Text(
-                    text = when (mode) {
-                        ThemeMode.SYSTEM -> stringResource(R.string.tv_theme_system)
-                        ThemeMode.LIGHT -> stringResource(R.string.tv_theme_light)
-                        ThemeMode.DARK -> stringResource(R.string.tv_theme_dark)
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-            }
-        }
     }
 }
 

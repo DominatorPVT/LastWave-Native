@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lastwave.app.data.local.ThemeMode
 import com.lastwave.app.ui.theme.LastWaveTheme
 import com.lastwave.app.ui.theme.ThemeViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -30,7 +31,8 @@ class TvHomeActivity : ComponentActivity() {
         setContent {
             val themeViewModel: ThemeViewModel = hiltViewModel()
             val themeState by themeViewModel.uiState.collectAsStateWithLifecycle()
-            LastWaveTheme(themeState = themeState) {
+            // TV is permanently dark: ignore the shared theme mode entirely.
+            LastWaveTheme(themeState = themeState.copy(themeMode = ThemeMode.DARK)) {
                 TvHomeRoot()
             }
         }

@@ -40,6 +40,7 @@ class TvHomeViewModel @Inject constructor(
     private val songPlayStats: SongPlayStatsRepository,
     private val innerTube: InnerTubeMusicApi,
     private val lyricsRepository: com.lastwave.app.data.lyrics.LyricsRepository,
+    private val canvasRepository: com.lastwave.app.data.canvas.CanvasRepository,
 ) : ViewModel() {
 
     var topTracks by mutableStateOf<List<SongPlayStatsEntity>>(emptyList())
@@ -66,6 +67,10 @@ class TvHomeViewModel @Inject constructor(
         private set
     private var lyricsRequestId = 0
 
+    /** Motion artwork (Spotify Canvas & friends) for the current track. */
+    var canvas by mutableStateOf<com.lastwave.app.data.canvas.CanvasArtwork?>(null)
+        private set
+
     /** Kept as its own low-frequency flow so the 60 ms progress ticker never reaches the UI. */
     val shuffleEnabled = musicPlayer.state
         .map { it.shuffleEnabled }
@@ -90,22 +95,27 @@ class TvHomeViewModel @Inject constructor(
         }
         viewModelScope.launch {
             // Personalized YT Music home feed first; if it comes back empty
-            // (signed out / blocked), fall back to the global charts so the TV
-            // home always opens with concrete music, never a random pick.
+            // (signed out / blocked), fall back to the global charts, then to a
+            // trending search — the TV home always opens with concrete music,
+            // never a random pick and never an empty shelf.
             val personalized = runCatching { innerTube.fetchHomeSongs() }.getOrDefault(emptyList())
-            val suggestions = personalized.ifEmpty {
-                runCatching { innerTube.fetchCharts() }.getOrDefault(emptyList())
-            }
+            val suggestions = personalized
+                .ifEmpty { runCatching { innerTube.fetchCharts() }.getOrDefault(emptyList()) }
+                .ifEmpty { runCatching { innerTube.searchSongs("trending songs", limit = 24) }.getOrDefault(emptyList()) }
             homeSuggestions = suggestions.distinctBy { it.videoId }.take(SUGGESTION_LIMIT)
             suggestionsLoading = false
         }
         viewModelScope.launch {
-            // Track changes drive lyrics: hold the previous song's words until
-            // the new fetch resolves so the TV screen never flashes empty.
+            // Track changes drive lyrics + motion artwork: hold the previous
+            // song's words until the new fetch resolves so the TV screen never
+            // flashes empty.
             musicPlayer.state
                 .map { it.current?.videoId }
                 .distinctUntilChanged()
-                .collect { loadLyrics(forceRefresh = false) }
+                .collect {
+                    loadLyrics(forceRefresh = false)
+                    loadCanvas()
+                }
         }
         viewModelScope.launch {
             searchQueryInternal
@@ -192,6 +202,15 @@ class TvHomeViewModel @Inject constructor(
     }
 
     fun reloadLyrics() = loadLyrics(forceRefresh = true)
+
+    /** Fetches motion artwork for whatever is playing (Spotify Canvas first). */
+    private suspend fun loadCanvas() {
+        canvas = null
+        val track = musicPlayer.state.value.current ?: return
+        canvas = runCatching {
+            canvasRepository.canvasFor(track)
+        }.getOrNull()
+    }
 
     fun playTrack(track: YouTubeMusicTrack) {
         musicPlayer.play(track.toPlayableTrack(), sourceLabel = TV_SOURCE_LABEL, startRadio = true)

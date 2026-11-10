@@ -2,6 +2,8 @@ package com.lastwave.app.ui.tv
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,15 +31,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lastwave.app.R
 import com.lastwave.app.data.lyrics.LyricLine
 import com.lastwave.app.ui.player.LyricsUiState
+import kotlinx.coroutines.launch
 
 /**
  * TV lyrics tab, BitChord-style: the current line is large and brand-colored
@@ -120,6 +133,12 @@ fun TvLyricsTab(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 if (success.isSynced) {
+                    Text(
+                        text = stringResource(R.string.tv_lyrics_scroll_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
                     TvSyncedLyrics(lines = success.lines, progressState = viewModel.musicPlayer.progressState)
                 } else {
                     val plain = success.plainLyrics?.takeIf { it.isNotBlank() }
@@ -143,6 +162,10 @@ private fun TvSyncedLyrics(
 ) {
     val listState = rememberLazyListState()
     val progress by progressState.collectAsStateWithLifecycle()
+    val listFocus = remember { FocusRequester() }
+    var lastUserScrollAt by remember { mutableLongStateOf(0L) }
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
 
     // Deriving the active index from the position flow keeps per-tick work to a
     // single int comparison — recomposition only happens when the line changes.
@@ -157,15 +180,28 @@ private fun TvSyncedLyrics(
         }
     }
 
-    LaunchedEffect(activeLine) {
-        if (activeLine >= 0) {
-            runCatching { listState.animateScrollToItem(activeLine) }
-        }
-    }
-
+    // The list itself is the D-pad target: UP/DOWN scroll manually, and the
+    // auto-follow pauses for a few seconds after the user takes over.
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(listFocus)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val direction = when (event.key) {
+                    Key.DirectionDown -> 1f
+                    Key.DirectionUp -> -1f
+                    else -> return@onPreviewKeyEvent false
+                }
+                lastUserScrollAt = System.currentTimeMillis()
+                scope.launch {
+                    val step = with(density) { LYRICS_SCROLL_STEP_DP.dp.toPx() }
+                    listState.animateScrollBy(direction * step)
+                }
+                true
+            },
         contentPadding = PaddingValues(top = 140.dp, bottom = 420.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
@@ -173,7 +209,16 @@ private fun TvSyncedLyrics(
             TvLyricLineRow(line = line, active = index == activeLine)
         }
     }
+
+    LaunchedEffect(activeLine) {
+        if (activeLine >= 0 && System.currentTimeMillis() - lastUserScrollAt > USER_SCROLL_HOLD_MS) {
+            runCatching { listState.animateScrollToItem(activeLine) }
+        }
+    }
 }
+
+private const val USER_SCROLL_HOLD_MS = 4_000L
+private const val LYRICS_SCROLL_STEP_DP = 96
 
 @Composable
 private fun TvLyricLineRow(line: LyricLine, active: Boolean) {

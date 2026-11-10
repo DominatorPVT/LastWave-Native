@@ -1139,4 +1139,17 @@
     <string name="tv_lyrics_not_found">इस गाने के लिए लिरिक्स नहीं मिले</string>
     <string name="tv_lyrics_retry">फिर कोशिश करें</string>
     <string name="tv_lyrics_source">लिरिक्स: %1$s</string>
+    <string name="tv_settings_accounts">अकाउंट्स</string>
+    <string name="tv_account_youtube">YouTube</string>
+    <string name="tv_account_spotify">Spotify</string>
+    <string name="tv_account_not_signed_in">साइन इन नहीं है</string>
+    <string name="tv_account_signed_in_as">%1$s के रूप में साइन इन</string>
+    <string name="tv_account_signed_in">साइन इन है</string>
+    <string name="tv_account_sign_in">साइन इन</string>
+    <string name="tv_account_sign_out">%1$s से साइन आउट</string>
+    <string name="tv_login_youtube_title">YouTube में साइन इन करें</string>
+    <string name="tv_login_spotify_title">Spotify में साइन इन करें</string>
+    <string name="tv_login_instructions">रिमोट से साइन इन करें। पूरा होने पर यह स्क्रीन अपने आप बंद हो जाएगी।</string>
+    <string name="tv_login_cancel_hint">बैक = रद्द करें</string>
+    <string name="tv_lyrics_scroll_hint">लिरिक्स स्क्रॉल करने के लिए ऊपर या नीचे दबाएं</string>
 </resources>

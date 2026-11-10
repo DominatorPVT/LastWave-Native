@@ -521,7 +521,23 @@ private fun TvNowPlayingHero(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(32.dp),
     ) {
-        TvArtwork(artworkUrl = track?.artworkUrl, size = 220.dp)
+        // Motion artwork (Spotify Canvas & friends) when a clip exists for the
+        // track; static cover art otherwise.
+        val canvas = viewModel.canvas
+        Box(modifier = Modifier.size(220.dp)) {
+            if (canvas != null) {
+                com.lastwave.app.ui.player.CanvasVideoPlayer(
+                    videoUrl = canvas.url,
+                    isPlaying = chrome.isPlaying,
+                    enableScrim = false,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(ArtworkShape),
+                )
+            } else {
+                TvArtwork(artworkUrl = track?.artworkUrl, size = 220.dp)
+            }
+        }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
