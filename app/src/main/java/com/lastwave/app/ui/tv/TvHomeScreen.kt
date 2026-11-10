@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -81,6 +83,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -271,6 +274,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         viewModel = viewModel,
                         playFocus = playFocus,
                         onSelectSearch = { tab = TvTab.SEARCH },
+                        onOpenLyrics = { tab = TvTab.LYRICS },
                     )
                     TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
                     TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
@@ -333,12 +337,6 @@ private fun TvNavRail(
             label = stringResource(R.string.tv_tab_queue),
             selected = selectedTab == TvTab.QUEUE,
             onClick = { onSelect(TvTab.QUEUE) },
-        )
-        TvRailItem(
-            icon = Icons.Rounded.MusicNote,
-            label = stringResource(R.string.tv_tab_lyrics),
-            selected = selectedTab == TvTab.LYRICS,
-            onClick = { onSelect(TvTab.LYRICS) },
         )
         TvRailItem(
             icon = Icons.Rounded.Search,
@@ -420,6 +418,7 @@ private fun TvHomeTab(
     viewModel: TvHomeViewModel,
     playFocus: FocusRequester,
     onSelectSearch: () -> Unit,
+    onOpenLyrics: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -432,6 +431,7 @@ private fun TvHomeTab(
                 viewModel = viewModel,
                 playFocus = playFocus,
                 onSelectSearch = onSelectSearch,
+                onOpenLyrics = onOpenLyrics,
             )
         }
         if (viewModel.homeSuggestions.isNotEmpty()) {
@@ -505,6 +505,7 @@ private fun TvNowPlayingHero(
     viewModel: TvHomeViewModel,
     playFocus: FocusRequester,
     onSelectSearch: () -> Unit,
+    onOpenLyrics: () -> Unit,
 ) {
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val progress by viewModel.musicPlayer.progressState.collectAsStateWithLifecycle()
@@ -584,10 +585,12 @@ private fun TvNowPlayingHero(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 // D-pad scrub row: focus it and press LEFT/RIGHT for ±10 s.
-                Box(
+                // The playhead animates smoothly, the bar wears a brand
+                // gradient, and a thumb dot blooms when focused (BitChord feel).
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(24.dp)
+                        .height(28.dp)
                         .focusRequester(seekBarFocus)
                         .focusable()
                         .onFocusChanged { seekBarFocused = it.isFocused }
@@ -606,12 +609,22 @@ private fun TvNowPlayingHero(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     val fraction = if (progress.durationMs > 0) {
-                        progress.positionMs.toFloat() / progress.durationMs
+                        (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
                     } else 0f
+                    val smoothFraction by animateFloatAsState(
+                        targetValue = fraction,
+                        animationSpec = tween(durationMillis = 120, easing = LinearEasing),
+                        label = "tvSeekFraction",
+                    )
                     val barHeight by animateDpAsState(
                         targetValue = if (seekBarFocused) 10.dp else 6.dp,
                         animationSpec = LiftShadowSpring,
                         label = "tvSeekHeight",
+                    )
+                    val thumbSize by animateDpAsState(
+                        targetValue = if (seekBarFocused) 22.dp else 14.dp,
+                        animationSpec = LiftScaleSpring,
+                        label = "tvSeekThumb",
                     )
                     Box(
                         modifier = Modifier
@@ -622,10 +635,25 @@ private fun TvNowPlayingHero(
                     )
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                            .fillMaxWidth(smoothFraction)
                             .height(barHeight)
                             .clip(RoundedCornerShape(percent = 50))
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.tertiary,
+                                    ),
+                                ),
+                            ),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .offset(x = (maxWidth - thumbSize) * smoothFraction)
+                            .size(thumbSize)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onPrimary)
+                            .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
                     )
                 }
                 Row(
@@ -634,12 +662,12 @@ private fun TvNowPlayingHero(
                 ) {
                     Text(
                         text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -687,6 +715,53 @@ private fun TvNowPlayingHero(
                 }
             }
         }
+        if (track != null) {
+            TvHeroLyricsButton(onClick = onOpenLyrics)
+        }
+    }
+}
+
+/** Round Lyrics shortcut on the hero's right edge — OK opens the Lyrics tab. */
+@Composable
+private fun TvHeroLyricsButton(onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 12.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isFocused) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    }
+                )
+                .onFocusChanged { isFocused = it.isFocused }
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.MusicNote,
+                contentDescription = stringResource(R.string.tv_tab_lyrics),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        Text(
+            text = stringResource(R.string.tv_tab_lyrics),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isFocused) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
     }
 }
 

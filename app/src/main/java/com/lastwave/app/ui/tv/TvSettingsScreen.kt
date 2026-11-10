@@ -22,7 +22,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -120,13 +125,15 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
             )
         }
 
-        item(key = "appearance-header") { TvSettingsSectionTitle(stringResource(R.string.tv_settings_appearance)) }
+        item(key = "appearance-header") {
+            TvSettingsSectionTitle(stringResource(R.string.tv_settings_appearance), Icons.Rounded.Palette)
+        }
         item(key = "theme") {
             TvThemeModeRow(selected = ui.themeMode, onSelect = settingsViewModel::setThemeMode)
         }
         item(key = "amoled") {
             TvSettingsRow(
-                icon = null,
+                icon = Icons.Rounded.Contrast,
                 title = stringResource(R.string.tv_settings_amoled),
                 subtitle = stringResource(R.string.tv_settings_amoled_desc),
                 checked = ui.amoled,
@@ -134,10 +141,12 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
             )
         }
 
-        item(key = "playback-header") { TvSettingsSectionTitle(stringResource(R.string.tv_settings_playback)) }
+        item(key = "playback-header") {
+            TvSettingsSectionTitle(stringResource(R.string.tv_settings_playback), Icons.Rounded.GraphicEq)
+        }
         item(key = "crossfade") {
             TvSettingsRow(
-                icon = null,
+                icon = Icons.Rounded.Timer,
                 title = stringResource(R.string.tv_settings_crossfade),
                 subtitle = stringResource(R.string.tv_settings_crossfade_desc),
                 checked = ui.crossfadeEnabled,
@@ -156,7 +165,9 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
             }
         }
 
-        item(key = "about-header") { TvSettingsSectionTitle(stringResource(R.string.tv_settings_about)) }
+        item(key = "about-header") {
+            TvSettingsSectionTitle(stringResource(R.string.tv_settings_about), Icons.Rounded.Info)
+        }
         item(key = "about-card") {
             TvAboutCard()
         }
@@ -167,13 +178,32 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun TvSettingsSectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 12.dp),
-    )
+private fun TvSettingsSectionTitle(title: String, icon: ImageVector) {
+    Row(
+        modifier = Modifier.padding(top = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 /** Theme mode: three chips in a focus group — D-pad LEFT/RIGHT walks them. */
