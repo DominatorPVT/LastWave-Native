@@ -523,6 +523,7 @@ private fun TvNowPlayingHero(
     var seekBarFocused by remember { mutableStateOf(false) }
     val track: PlayableTrack? = chrome.current
 
+    val canvas = viewModel.canvas
     // Ambient color from the track artwork — the same Palette extraction the
     // phone's dynamic theme uses, fetched off the main thread on artwork
     // change and animated so track switches cross-fade the glow.
@@ -534,6 +535,18 @@ private fun TvNowPlayingHero(
         ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
         ?: MaterialTheme.colorScheme.primary
     val heroActive = track != null && chrome.isPlaying
+    // Static-artwork tracks (no Canvas) get a slightly stronger glow —
+    // there is more empty panel for the album color to fill.
+    val heroWash = when {
+        !heroActive -> 0.12f
+        canvas != null -> 0.30f
+        else -> 0.36f
+    }
+    val heroHalo = when {
+        !heroActive -> 0.14f
+        canvas != null -> 0.42f
+        else -> 0.50f
+    }
     val ambient by animateColorAsState(
         targetValue = ambientBase,
         animationSpec = tween(durationMillis = 900),
@@ -548,8 +561,8 @@ private fun TvNowPlayingHero(
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            ambient.copy(alpha = if (heroActive) 0.30f else 0.12f),
-                            ambient.copy(alpha = if (heroActive) 0.08f else 0.03f),
+                            ambient.copy(alpha = heroWash),
+                            ambient.copy(alpha = heroWash / 3f),
                             Color.Transparent,
                         ),
                     ),
@@ -562,7 +575,6 @@ private fun TvNowPlayingHero(
         ) {
             // Motion artwork (Spotify Canvas & friends) when a clip exists for the
             // track; static cover art otherwise.
-            val canvas = viewModel.canvas
             Box(modifier = Modifier.size(220.dp)) {
                 // Radial glow bleeding out from behind the canvas,
                 // tinted by the artwork color.
@@ -572,7 +584,7 @@ private fun TvNowPlayingHero(
                         .background(
                             Brush.radialGradient(
                                 listOf(
-                                    ambient.copy(alpha = if (heroActive) 0.42f else 0.14f),
+                                    ambient.copy(alpha = heroHalo),
                                     ambient.copy(alpha = 0.16f),
                                     Color.Transparent,
                                 ),
