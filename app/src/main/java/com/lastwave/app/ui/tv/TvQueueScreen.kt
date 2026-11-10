@@ -40,9 +40,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.lastwave.app.R
 import com.lastwave.app.playback.PlayableTrack
+import com.lastwave.app.ui.theme.ArtworkShape
 
 /**
  * TV queue: the upcoming tracks with the current one pinned in view. Focus
