@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -37,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.withFrameNanos
 
 /** Which service the TV login WebView is signing into. */
 enum class TvLoginTarget {
@@ -130,6 +132,15 @@ fun TvLoginScreen(
                         )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // TV rendering: full desktop layout scaled to fit.
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        // The remote can only drive the page if the WebView
+                        // itself is the focused view — without these the
+                        // D-pad dies at the Compose surface.
+                        isFocusable = true
+                        isFocusableInTouchMode = true
                         val cm = CookieManager.getInstance()
                         cm.setAcceptCookie(true)
                         cm.setAcceptThirdPartyCookies(this, true)
@@ -143,9 +154,44 @@ fun TvLoginScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .onPreviewKeyEvent { event ->
+                        // Forward every remote key the page understands
+                        // straight into the WebView: D-pad moves between
+                        // fields/links, OK clicks, PageUp/Down scrolls. Compose
+                        // focus never enters the WebView, so without this
+                        // bridge the remote looks dead on the login screen.
+                        if (event.nativeKeyEvent.action != android.view.KeyEvent.ACTION_DOWN) {
+                            return@onPreviewKeyEvent false
+                        }
+                        val wv = webView ?: return@onPreviewKeyEvent false
+                        val code = event.nativeKeyEvent.keyCode
+                        val forwarded = when (code) {
+                            android.view.KeyEvent.KEYCODE_DPAD_UP,
+                            android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+                            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+                            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+                            android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                            android.view.KeyEvent.KEYCODE_ENTER,
+                            android.view.KeyEvent.KEYCODE_PAGE_UP,
+                            android.view.KeyEvent.KEYCODE_PAGE_DOWN,
+                            -> true
+                            else -> false
+                        }
+                        if (!forwarded) return@onPreviewKeyEvent false
+                        wv.requestFocus()
+                        wv.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, code)) &&
+                            wv.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, code))
+                    },
             )
         }
+    }
+
+    LaunchedEffect(webView) {
+        // Give the WebView focus once it is attached and laid out, so the
+        // first D-pad press already moves the page cursor.
+        withFrameNanos { }
+        webView?.requestFocus()
     }
 
     LaunchedEffect(target) {

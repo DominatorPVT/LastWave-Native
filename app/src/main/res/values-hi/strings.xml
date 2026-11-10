@@ -1149,7 +1149,13 @@
     <string name="tv_account_sign_out">%1$s से साइन आउट</string>
     <string name="tv_login_youtube_title">YouTube में साइन इन करें</string>
     <string name="tv_login_spotify_title">Spotify में साइन इन करें</string>
-    <string name="tv_login_instructions">रिमोट से साइन इन करें। पूरा होने पर यह स्क्रीन अपने आप बंद हो जाएगी।</string>
+    <string name="tv_login_instructions">तीर बटन से चलाइए, OK से चुनिए, Back से बाहर। साइन इन पूरा होते ही यह स्क्रीन अपने आप बंद हो जाएगी।</string>
     <string name="tv_login_cancel_hint">बैक = रद्द करें</string>
     <string name="tv_lyrics_scroll_hint">लिरिक्स स्क्रॉल करने के लिए ऊपर या नीचे दबाएं</string>
+    <string name="tv_tab_library">लाइब्रेरी</string>
+    <string name="tv_library_title">आपकी लाइब्रेरी</string>
+    <string name="tv_library_empty">अभी कोई प्लेलिस्ट नहीं है। फ़ोन पर Generate से बनाइए, वो यहाँ दिख जाएगी।</string>
+    <string name="tv_library_play_all">सब चलाएँ</string>
+    <string name="tv_library_one_track">1 ट्रैक</string>
+    <string name="tv_library_track_count">%1$d ट्रैक</string>
 </resources>

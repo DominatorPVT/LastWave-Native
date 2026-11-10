@@ -1463,7 +1463,13 @@
     <string name="tv_account_sign_out">Sign out of %1$s</string>
     <string name="tv_login_youtube_title">Sign in to YouTube</string>
     <string name="tv_login_spotify_title">Sign in to Spotify</string>
-    <string name="tv_login_instructions">Use the remote to sign in. This screen closes by itself when you finish.</string>
+    <string name="tv_login_instructions">Arrows move, OK selects, Back exits. This screen closes by itself when you finish signing in.</string>
     <string name="tv_login_cancel_hint">Back cancels</string>
     <string name="tv_lyrics_scroll_hint">Press up or down to scroll lyrics</string>
+    <string name="tv_tab_library">Library</string>
+    <string name="tv_library_title">Your Library</string>
+    <string name="tv_library_empty">No playlists yet. Create one on your phone with Generate and it shows up here.</string>
+    <string name="tv_library_play_all">Play all</string>
+    <string name="tv_library_one_track">1 track</string>
+    <string name="tv_library_track_count">%1$d tracks</string>
 </resources>

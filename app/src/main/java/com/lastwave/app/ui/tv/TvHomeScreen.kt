@@ -46,6 +46,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -276,8 +277,10 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         playFocus = playFocus,
                         onSelectSearch = { tab = TvTab.SEARCH },
                         onOpenLyrics = { tab = TvTab.LYRICS },
+                        onOpenQueue = { tab = TvTab.QUEUE },
                     )
                     TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
+                    TvTab.LIBRARY -> TvLibraryTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
                     TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
                     TvTab.SEARCH -> TvSearchTab(viewModel)
                     TvTab.SETTINGS -> TvSettingsTab()
@@ -287,7 +290,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
     }
 }
 
-private enum class TvTab { HOME, QUEUE, LYRICS, SEARCH, SETTINGS }
+private enum class TvTab { HOME, QUEUE, LIBRARY, LYRICS, SEARCH, SETTINGS }
 
 /** Brand mark: lime disc with the four-bar equalizer, drawn in place (no bitmap). */
 @Composable
@@ -338,6 +341,12 @@ private fun TvNavRail(
             label = stringResource(R.string.tv_tab_queue),
             selected = selectedTab == TvTab.QUEUE,
             onClick = { onSelect(TvTab.QUEUE) },
+        )
+        TvRailItem(
+            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+            label = stringResource(R.string.tv_tab_library),
+            selected = selectedTab == TvTab.LIBRARY,
+            onClick = { onSelect(TvTab.LIBRARY) },
         )
         TvRailItem(
             icon = Icons.Rounded.Search,
@@ -420,6 +429,7 @@ private fun TvHomeTab(
     playFocus: FocusRequester,
     onSelectSearch: () -> Unit,
     onOpenLyrics: () -> Unit,
+    onOpenQueue: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -752,7 +762,13 @@ private fun TvNowPlayingHero(
             }
         }
         if (track != null) {
-            TvHeroLyricsButton(onClick = onOpenLyrics)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TvHeroLyricsButton(onClick = onOpenLyrics)
+                TvHeroQueueButton(onClick = onOpenQueue)
+            }
         }
     }
 }
@@ -791,6 +807,50 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
         }
         Text(
             text = stringResource(R.string.tv_tab_lyrics),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isFocused) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+    }
+}
+
+/** Round Queue shortcut under the Lyrics button — OK opens the Queue tab. */
+@Composable
+private fun TvHeroQueueButton(onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 12.dp)
+                .clip(CircleShape)
+                .background(
+                    if (isFocused) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    }
+                )
+                .onFocusChanged { isFocused = it.isFocused }
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                contentDescription = stringResource(R.string.tv_tab_queue),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        Text(
+            text = stringResource(R.string.tv_tab_queue),
             style = MaterialTheme.typography.labelMedium,
             color = if (isFocused) {
                 MaterialTheme.colorScheme.onSurface
