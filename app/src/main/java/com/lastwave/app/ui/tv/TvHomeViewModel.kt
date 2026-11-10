@@ -41,7 +41,12 @@ class TvHomeViewModel @Inject constructor(
     private val innerTube: InnerTubeMusicApi,
     private val lyricsRepository: com.lastwave.app.data.lyrics.LyricsRepository,
     private val canvasRepository: com.lastwave.app.data.canvas.CanvasRepository,
+    private val paletteExtractor: com.lastwave.app.data.repository.NowPlayingPaletteExtractor,
 ) : ViewModel() {
+
+    /** Artwork accent for the TV hero's ambient glow (phone-parity Palette). */
+    suspend fun extractAmbientAccent(artworkUrl: String): String? =
+        paletteExtractor.extractAccentHex(artworkUrl)
 
     var topTracks by mutableStateOf<List<SongPlayStatsEntity>>(emptyList())
         private set

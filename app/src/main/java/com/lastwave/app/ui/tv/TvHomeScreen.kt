@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -522,248 +523,296 @@ private fun TvNowPlayingHero(
     var seekBarFocused by remember { mutableStateOf(false) }
     val track: PlayableTrack? = chrome.current
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(32.dp),
-    ) {
-        // Motion artwork (Spotify Canvas & friends) when a clip exists for the
-        // track; static cover art otherwise.
-        val canvas = viewModel.canvas
-        Box(modifier = Modifier.size(220.dp)) {
-            if (canvas != null) {
-                com.lastwave.app.ui.player.CanvasVideoPlayer(
-                    videoUrl = canvas.url,
-                    isPlaying = chrome.isPlaying,
-                    enableScrim = false,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(ArtworkShape),
-                )
-            } else {
-                TvArtwork(artworkUrl = track?.artworkUrl, size = 220.dp)
-            }
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+    // Ambient color from the track artwork — the same Palette extraction the
+    // phone's dynamic theme uses, fetched off the main thread on artwork
+    // change and animated so track switches cross-fade the glow.
+    val ambientHex = remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(track?.artworkUrl) {
+        ambientHex.value = track?.artworkUrl?.let { viewModel.extractAmbientAccent(it) }
+    }
+    val ambientBase = ambientHex.value
+        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+        ?: MaterialTheme.colorScheme.primary
+    val heroActive = track != null && chrome.isPlaying
+    val ambient by animateColorAsState(
+        targetValue = ambientBase,
+        animationSpec = tween(durationMillis = 900),
+        label = "tvHeroAmbient",
+    )
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // Ambient wash behind the whole hero panel, tinted by the artwork.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            ambient.copy(alpha = if (heroActive) 0.30f else 0.12f),
+                            ambient.copy(alpha = if (heroActive) 0.08f else 0.03f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(32.dp),
         ) {
-            if (track == null) {
-                // Nothing playing: this panel is itself a focus target so the
-                // content pane is always reachable with the remote. Activating
-                // it opens Search.
-                val interaction = remember { MutableInteractionSource() }
-                var promptFocused by remember { mutableStateOf(false) }
-                Row(
+            // Motion artwork (Spotify Canvas & friends) when a clip exists for the
+            // track; static cover art otherwise.
+            val canvas = viewModel.canvas
+            Box(modifier = Modifier.size(220.dp)) {
+                // Radial glow bleeding out from behind the canvas,
+                // tinted by the artwork color.
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .tvLift(focused = promptFocused, shape = RoundedCornerShape(20.dp), focusedScale = 1.02f)
-                        .clip(RoundedCornerShape(20.dp))
+                        .requiredSize(360.dp)
                         .background(
-                            if (promptFocused) {
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerLow
-                            }
-                        )
-                        .onFocusChanged { promptFocused = it.isFocused }
-                        .clickable(interactionSource = interaction, indication = null, onClick = onSelectSearch)
-                        .padding(horizontal = 24.dp, vertical = 28.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp),
+                            Brush.radialGradient(
+                                listOf(
+                                    ambient.copy(alpha = if (heroActive) 0.42f else 0.14f),
+                                    ambient.copy(alpha = 0.16f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        ),
+                )
+                if (canvas != null) {
+                    com.lastwave.app.ui.player.CanvasVideoPlayer(
+                        videoUrl = canvas.url,
+                        isPlaying = chrome.isPlaying,
+                        enableScrim = false,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(ArtworkShape),
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                } else {
+                    TvArtwork(artworkUrl = track?.artworkUrl, size = 220.dp)
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (track == null) {
+                    // Nothing playing: this panel is itself a focus target so the
+                    // content pane is always reachable with the remote. Activating
+                    // it opens Search.
+                    val interaction = remember { MutableInteractionSource() }
+                    var promptFocused by remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvLift(focused = promptFocused, shape = RoundedCornerShape(20.dp), focusedScale = 1.02f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (promptFocused) {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                }
+                            )
+                            .onFocusChanged { promptFocused = it.isFocused }
+                            .clickable(interactionSource = interaction, indication = null, onClick = onSelectSearch)
+                            .padding(horizontal = 24.dp, vertical = 28.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = stringResource(R.string.tv_nothing_playing),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = stringResource(R.string.tv_nothing_playing_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = track.artist,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // D-pad scrub row: focus it and press LEFT/RIGHT for ±10 s.
+                    // Focus is unmissable: the whole strip gets a brand ring, a
+                    // tinted pill backdrop, the bar doubles in height and the
+                    // thumb blooms (BitChord-style slider affordance).
+                    BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                            .focusRequester(seekBarFocus)
+                            .focusable()
+                            .onFocusChanged { seekBarFocused = it.isFocused }
+                            .onPreviewKeyEvent { event ->
+                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                val delta = when (event.key) {
+                                    Key.DirectionRight -> 10_000L
+                                    Key.DirectionLeft -> -10_000L
+                                    else -> return@onPreviewKeyEvent false
+                                }
+                                viewModel.seekTo(
+                                    (progress.positionMs + delta).coerceIn(0L, progress.durationMs),
+                                )
+                                true
+                            }
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(
+                                if (seekBarFocused) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                } else {
+                                    Color.Transparent
+                                }
+                            )
+                            .border(
+                                width = 3.dp,
+                                color = if (seekBarFocused) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    Color.Transparent
+                                },
+                                shape = RoundedCornerShape(percent = 50),
+                            )
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        val fraction = if (progress.durationMs > 0) {
+                            (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
+                        } else 0f
+                        val smoothFraction by animateFloatAsState(
+                            targetValue = fraction,
+                            animationSpec = tween(durationMillis = 120, easing = LinearEasing),
+                            label = "tvSeekFraction",
+                        )
+                        val barHeight by animateDpAsState(
+                            targetValue = if (seekBarFocused) 12.dp else 6.dp,
+                            animationSpec = LiftShadowSpring,
+                            label = "tvSeekHeight",
+                        )
+                        val thumbSize by animateDpAsState(
+                            targetValue = if (seekBarFocused) 26.dp else 14.dp,
+                            animationSpec = LiftShadowSpring,
+                            label = "tvSeekThumb",
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(barHeight)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(smoothFraction)
+                                .height(barHeight)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.primary,
+                                            MaterialTheme.colorScheme.tertiary,
+                                        ),
+                                    ),
+                                ),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .offset(x = (maxWidth - thumbSize) * smoothFraction)
+                                .size(thumbSize)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onPrimary)
+                                .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Text(
-                            text = stringResource(R.string.tv_nothing_playing),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = stringResource(R.string.tv_nothing_playing_hint),
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-            } else {
-                Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                // D-pad scrub row: focus it and press LEFT/RIGHT for ±10 s.
-                // Focus is unmissable: the whole strip gets a brand ring, a
-                // tinted pill backdrop, the bar doubles in height and the
-                // thumb blooms (BitChord-style slider affordance).
-                BoxWithConstraints(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .focusRequester(seekBarFocus)
-                        .focusable()
-                        .onFocusChanged { seekBarFocused = it.isFocused }
-                        .onPreviewKeyEvent { event ->
-                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                            val delta = when (event.key) {
-                                Key.DirectionRight -> 10_000L
-                                Key.DirectionLeft -> -10_000L
-                                else -> return@onPreviewKeyEvent false
-                            }
-                            viewModel.seekTo(
-                                (progress.positionMs + delta).coerceIn(0L, progress.durationMs),
-                            )
-                            true
-                        }
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(
-                            if (seekBarFocused) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                            } else {
-                                Color.Transparent
-                            }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TvTransportButton(
+                            icon = if (shuffle) Icons.Rounded.ShuffleOn else Icons.Rounded.Shuffle,
+                            contentDescription = stringResource(R.string.tv_shuffle),
+                            active = shuffle,
+                            onClick = viewModel::toggleShuffle,
                         )
-                        .border(
-                            width = 3.dp,
-                            color = if (seekBarFocused) {
-                                MaterialTheme.colorScheme.primary
+                        TvTransportButton(
+                            icon = Icons.Rounded.SkipPrevious,
+                            contentDescription = stringResource(R.string.tv_previous),
+                            onClick = viewModel::previous,
+                        )
+                        TvTransportButton(
+                            icon = if (chrome.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (chrome.isPlaying) {
+                                stringResource(R.string.tv_pause)
                             } else {
-                                Color.Transparent
+                                stringResource(R.string.tv_play)
                             },
-                            shape = RoundedCornerShape(percent = 50),
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            iconTint = MaterialTheme.colorScheme.onPrimary,
+                            iconSize = 40.dp,
+                            buttonSize = 72.dp,
+                            modifier = Modifier.focusRequester(playFocus),
+                            onClick = viewModel::togglePlayPause,
                         )
-                        .padding(horizontal = 12.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    val fraction = if (progress.durationMs > 0) {
-                        (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
-                    } else 0f
-                    val smoothFraction by animateFloatAsState(
-                        targetValue = fraction,
-                        animationSpec = tween(durationMillis = 120, easing = LinearEasing),
-                        label = "tvSeekFraction",
-                    )
-                    val barHeight by animateDpAsState(
-                        targetValue = if (seekBarFocused) 12.dp else 6.dp,
-                        animationSpec = LiftShadowSpring,
-                        label = "tvSeekHeight",
-                    )
-                    val thumbSize by animateDpAsState(
-                        targetValue = if (seekBarFocused) 26.dp else 14.dp,
-                        animationSpec = LiftShadowSpring,
-                        label = "tvSeekThumb",
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(barHeight)
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(smoothFraction)
-                            .height(barHeight)
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.tertiary,
-                                    ),
-                                ),
-                            ),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .offset(x = (maxWidth - thumbSize) * smoothFraction)
-                            .size(thumbSize)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onPrimary)
-                            .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TvTransportButton(
-                        icon = if (shuffle) Icons.Rounded.ShuffleOn else Icons.Rounded.Shuffle,
-                        contentDescription = stringResource(R.string.tv_shuffle),
-                        active = shuffle,
-                        onClick = viewModel::toggleShuffle,
-                    )
-                    TvTransportButton(
-                        icon = Icons.Rounded.SkipPrevious,
-                        contentDescription = stringResource(R.string.tv_previous),
-                        onClick = viewModel::previous,
-                    )
-                    TvTransportButton(
-                        icon = if (chrome.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (chrome.isPlaying) {
-                            stringResource(R.string.tv_pause)
-                        } else {
-                            stringResource(R.string.tv_play)
-                        },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        iconTint = MaterialTheme.colorScheme.onPrimary,
-                        iconSize = 40.dp,
-                        buttonSize = 72.dp,
-                        modifier = Modifier.focusRequester(playFocus),
-                        onClick = viewModel::togglePlayPause,
-                    )
-                    TvTransportButton(
-                        icon = Icons.Rounded.SkipNext,
-                        contentDescription = stringResource(R.string.tv_next),
-                        onClick = viewModel::next,
-                    )
-                    TvTransportButton(
-                        icon = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                        contentDescription = stringResource(R.string.tv_repeat),
-                        active = repeatMode != Player.REPEAT_MODE_OFF,
-                        onClick = viewModel::cycleRepeatMode,
-                    )
+                        TvTransportButton(
+                            icon = Icons.Rounded.SkipNext,
+                            contentDescription = stringResource(R.string.tv_next),
+                            onClick = viewModel::next,
+                        )
+                        TvTransportButton(
+                            icon = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                            contentDescription = stringResource(R.string.tv_repeat),
+                            active = repeatMode != Player.REPEAT_MODE_OFF,
+                            onClick = viewModel::cycleRepeatMode,
+                        )
+                    }
                 }
             }
-        }
-        if (track != null) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                TvHeroLyricsButton(onClick = onOpenLyrics)
-                TvHeroQueueButton(onClick = onOpenQueue)
+            if (track != null) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TvHeroLyricsButton(onClick = onOpenLyrics)
+                    TvHeroQueueButton(onClick = onOpenQueue)
+                }
             }
         }
     }
