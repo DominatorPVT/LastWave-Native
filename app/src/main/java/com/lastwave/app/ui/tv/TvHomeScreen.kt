@@ -624,7 +624,7 @@ private fun TvNowPlayingHero(
                     )
                     val thumbSize by animateDpAsState(
                         targetValue = if (seekBarFocused) 22.dp else 14.dp,
-                        animationSpec = LiftScaleSpring,
+                        animationSpec = LiftShadowSpring,
                         label = "tvSeekThumb",
                     )
                     Box(
