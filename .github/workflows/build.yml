@@ -156,7 +156,7 @@ jobs:
           mkdir -p final_apk
           cp "app/build/outputs/apk/${BUILD_VARIANT}/app-${BUILD_VARIANT}.apk" "final_apk/LastWave-v${VERSION}-${BUILD_VARIANT}.apk"
 
-      - name: Build TV APK (universal, minSdk 21 for older TVs)
+      - name: Build TV APK (universal, minSdk 23 for older TVs)
         env:
           ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
           LASTWAVE_LYRICS_TOKEN: ${{ secrets.LASTWAVE_LYRICS_TOKEN }}
@@ -170,7 +170,7 @@ jobs:
           if [ -n "${UNSEALED_STORE_FILE:-}" ]; then
             SIGNING_ARGS="-PRELEASE_STORE_FILE=$UNSEALED_STORE_FILE -PRELEASE_STORE_PASSWORD=$UNSEALED_STORE_PASSWORD -PRELEASE_KEY_ALIAS=$UNSEALED_KEY_ALIAS -PRELEASE_KEY_PASSWORD=$UNSEALED_KEY_PASSWORD -PRELEASE_STORE_TYPE=$UNSEALED_STORE_TYPE"
           fi
-          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=21 $SIGNING_ARGS --stacktrace
+          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=23 $SIGNING_ARGS --stacktrace
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p final_apk
