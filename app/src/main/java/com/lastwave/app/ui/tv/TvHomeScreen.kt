@@ -443,6 +443,7 @@ private fun TvHomeTab(
                 playFocus = playFocus,
                 onSelectSearch = onSelectSearch,
                 onOpenLyrics = onOpenLyrics,
+                onOpenQueue = onOpenQueue,
             )
         }
         if (viewModel.homeSuggestions.isNotEmpty()) {
@@ -517,6 +518,7 @@ private fun TvNowPlayingHero(
     playFocus: FocusRequester,
     onSelectSearch: () -> Unit,
     onOpenLyrics: () -> Unit,
+    onOpenQueue: () -> Unit,
 ) {
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val progress by viewModel.musicPlayer.progressState.collectAsStateWithLifecycle()
