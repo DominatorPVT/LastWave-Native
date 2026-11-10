@@ -1149,7 +1149,7 @@
     <string name="tv_account_sign_out">%1$s से साइन आउट</string>
     <string name="tv_login_youtube_title">YouTube में साइन इन करें</string>
     <string name="tv_login_spotify_title">Spotify में साइन इन करें</string>
-    <string name="tv_login_instructions">तीर बटन से चलाइए, OK से चुनिए, Back से बाहर। साइन इन पूरा होते ही यह स्क्रीन अपने आप बंद हो जाएगी।</string>
+    <string name="tv_login_instructions">तीर से पॉइंटर चलाइए, OK से क्लिक कीजिए, Page up/down से स्क्रॉल कीजिए, Back पीछे जाए या बाहर। साइन इन होते ही यह स्क्रीन अपने आप बंद हो जाएगी।</string>
     <string name="tv_login_cancel_hint">बैक = रद्द करें</string>
     <string name="tv_lyrics_scroll_hint">लिरिक्स स्क्रॉल करने के लिए ऊपर या नीचे दबाएं</string>
     <string name="tv_tab_library">लाइब्रेरी</string>
