@@ -102,16 +102,6 @@ class TvSettingsViewModel @Inject constructor(
         settingsPreferences.setCrossfadeSeconds(seconds.coerceIn(1, 12))
     }
 
-    /** Called by the TV login WebView once YouTube cookies are present. */
-    fun completeYouTubeLogin(rawCookieHeader: String) = viewModelScope.launch {
-        ytAuth.connect(rawCookieHeader, "Google account", null, null)
-    }
-
-    /** Called by the TV login WebView once the Spotify sp_dc cookie exists. */
-    fun completeSpotifyLogin(spdc: String) = viewModelScope.launch {
-        spotifyPreferences.saveSpdc(spdc)
-    }
-
     fun signOutYouTube() = viewModelScope.launch {
         runCatching { ytAuth.signOut() }
     }
@@ -219,13 +209,10 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
         loginTarget?.let { target ->
             TvLoginScreen(
                 target = target,
-                onComplete = { credential ->
-                    when (target) {
-                        TvLoginTarget.YOUTUBE -> settingsViewModel.completeYouTubeLogin(credential)
-                        TvLoginTarget.SPOTIFY -> settingsViewModel.completeSpotifyLogin(credential)
-                    }
-                    loginTarget = null
-                },
+                // The login screen persists the connection itself (the same
+                // ViewModels the phone build uses), so closing is all the
+                // caller does — the accounts rows react to the stores.
+                onFinished = { loginTarget = null },
                 onCancel = { loginTarget = null },
             )
         }
