@@ -293,7 +293,7 @@ fun TvLoginScreen(
                             settings.mixedContentMode =
                                 android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             overScrollMode = android.view.View.OVER_SCROLL_NEVER
-                            setSupportMultipleWindows(false)
+                            settings.setSupportMultipleWindows(false)
                             // The cursor tap needs the WebView to hold focus
                             // (that is also what summons the on-screen
                             // keyboard when an input field is clicked).
