@@ -602,12 +602,13 @@ private fun TvNowPlayingHero(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 // D-pad scrub row: focus it and press LEFT/RIGHT for ±10 s.
-                // The playhead animates smoothly, the bar wears a brand
-                // gradient, and a thumb dot blooms when focused (BitChord feel).
+                // Focus is unmissable: the whole strip gets a brand ring, a
+                // tinted pill backdrop, the bar doubles in height and the
+                // thumb blooms (BitChord-style slider affordance).
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
+                        .height(36.dp)
                         .focusRequester(seekBarFocus)
                         .focusable()
                         .onFocusChanged { seekBarFocused = it.isFocused }
@@ -622,7 +623,25 @@ private fun TvNowPlayingHero(
                                 (progress.positionMs + delta).coerceIn(0L, progress.durationMs),
                             )
                             true
-                        },
+                        }
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(
+                            if (seekBarFocused) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                        .border(
+                            width = 3.dp,
+                            color = if (seekBarFocused) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.Transparent
+                            },
+                            shape = RoundedCornerShape(percent = 50),
+                        )
+                        .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     val fraction = if (progress.durationMs > 0) {
@@ -634,12 +653,12 @@ private fun TvNowPlayingHero(
                         label = "tvSeekFraction",
                     )
                     val barHeight by animateDpAsState(
-                        targetValue = if (seekBarFocused) 10.dp else 6.dp,
+                        targetValue = if (seekBarFocused) 12.dp else 6.dp,
                         animationSpec = LiftShadowSpring,
                         label = "tvSeekHeight",
                     )
                     val thumbSize by animateDpAsState(
-                        targetValue = if (seekBarFocused) 22.dp else 14.dp,
+                        targetValue = if (seekBarFocused) 26.dp else 14.dp,
                         animationSpec = LiftShadowSpring,
                         label = "tvSeekThumb",
                     )
