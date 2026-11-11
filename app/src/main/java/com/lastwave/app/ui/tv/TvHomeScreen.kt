@@ -779,7 +779,21 @@ private fun TvNowPlayingHero(
                             ),
                         ),
                 )
+                // Original album art is the floor layer: it dissolves between
+                // covers on track change and stays visible until the Canvas
+                // clip actually renders.
+                Crossfade(
+                    targetState = track?.artworkUrl,
+                    animationSpec = tween(durationMillis = 420),
+                    label = "tvHeroArt",
+                ) { url ->
+                    TvArtwork(artworkUrl = url, size = 220.dp)
+                }
                 if (canvas != null) {
+                    // CanvasVideoPlayer holds its surface fully transparent
+                    // until the first video frame (and on playback error), so
+                    // the artwork above stays visible while the clip loads —
+                    // and fades in over the cover only once it truly works.
                     com.lastwave.app.ui.player.CanvasVideoPlayer(
                         videoUrl = canvas.url,
                         isPlaying = chrome.isPlaying,
@@ -788,15 +802,6 @@ private fun TvNowPlayingHero(
                             .fillMaxSize()
                             .clip(ArtworkShape),
                     )
-                } else {
-                    // Static art dissolves into the next track's cover.
-                    Crossfade(
-                        targetState = track?.artworkUrl,
-                        animationSpec = tween(durationMillis = 420),
-                        label = "tvHeroArt",
-                    ) { url ->
-                        TvArtwork(artworkUrl = url, size = 220.dp)
-                    }
                 }
             }
             Column(
