@@ -109,6 +109,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -124,6 +125,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import android.os.Build
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.lastwave.app.R
 import com.lastwave.app.data.local.db.SongPlayStatsEntity
 import com.lastwave.app.data.music.YouTubeMusicTrack
@@ -535,7 +537,12 @@ private fun TvArtworkBackdrop(
             ) { url ->
                 if (url != null) {
                     AsyncImage(
-                        model = url,
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(url)
+                            // The backdrop is blurred to nothing — decoding
+                            // full-res art here only wastes memory.
+                            .size(960)
+                            .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -1311,7 +1318,11 @@ private fun TvTrackCard(
         ) {
             if (artworkUrl != null) {
                 AsyncImage(
-                    model = artworkUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(artworkUrl)
+                        .size(400)
+                        .crossfade(220)
+                        .build(),
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -1359,7 +1370,13 @@ private fun TvArtwork(artworkUrl: String?, size: Dp) {
     ) {
         if (artworkUrl != null) {
             AsyncImage(
-                model = artworkUrl,
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(artworkUrl)
+                    // Decode no larger than this composable draws, so hero and
+                    // small rows share one cache key per artwork size class.
+                    .size(with(LocalDensity.current) { size.roundToPx() })
+                    .crossfade(220)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

@@ -1,5 +1,7 @@
 package com.lastwave.app.ui.tv
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -37,11 +39,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.lastwave.app.R
 import com.lastwave.app.playback.PlayableTrack
 import com.lastwave.app.ui.theme.ArtworkShape
@@ -101,11 +105,17 @@ fun TvQueueTab(
                         track = track,
                         isCurrent = index == currentIndex,
                         indexLabel = (index + 1).toString(),
-                        modifier = if (index == currentIndex.coerceAtLeast(0)) {
-                            Modifier.focusRequester(entry)
-                        } else {
-                            Modifier
-                        },
+                        modifier = Modifier
+                            // Queue changes glide: rows fade in and shift
+                            // smoothly instead of snapping into place.
+                            .animateItem()
+                            .then(
+                                if (index == currentIndex.coerceAtLeast(0)) {
+                                    Modifier.focusRequester(entry)
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         onClick = { viewModel.musicPlayer.seekToQueueItem(index) },
                     )
                 }
@@ -124,6 +134,15 @@ private fun TvQueueRow(
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    val rowBackground by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.surfaceContainerHigh
+            isCurrent -> MaterialTheme.colorScheme.surfaceContainerLow
+            else -> androidx.compose.ui.graphics.Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvQueueRowBackground",
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -134,13 +153,7 @@ private fun TvQueueRow(
                 elevation = 8.dp,
             )
             .clip(RoundedCornerShape(16.dp))
-            .background(
-                when {
-                    isFocused -> MaterialTheme.colorScheme.surfaceContainerHigh
-                    isCurrent -> MaterialTheme.colorScheme.surfaceContainerLow
-                    else -> androidx.compose.ui.graphics.Color.Transparent
-                }
-            )
+            .background(rowBackground)
             .onFocusChanged { isFocused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -162,7 +175,11 @@ private fun TvQueueRow(
         ) {
             if (track.artworkUrl != null) {
                 AsyncImage(
-                    model = track.artworkUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(track.artworkUrl)
+                        .size(160)
+                        .crossfade(220)
+                        .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(52.dp),

@@ -252,7 +252,8 @@
             android:label="@string/app_name"
             android:banner="@drawable/tv_banner"
             android:theme="@style/Theme.LastWave.Splash"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:configChanges="uiMode|density|screenSize|smallestScreenSize|screenLayout|orientation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />

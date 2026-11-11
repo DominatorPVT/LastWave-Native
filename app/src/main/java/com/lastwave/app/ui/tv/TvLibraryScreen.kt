@@ -115,7 +115,8 @@ fun TvLibraryTab(
                     contentType = { _, _ -> "playlist" },
                 ) { index, playlist ->
                     val expanded = expandedId == playlist.id
-                    Column {
+                    // Playlist entries fade/shift smoothly on load and reorder.
+                    Column(modifier = Modifier.animateItem()) {
                         fun playFrom(trackIndex: Int) {
                             val tracks = playlist.tracks.map { it.toPlayableTrack() }
                             if (tracks.isNotEmpty()) {

@@ -6,6 +6,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
+import android.content.Context
+import android.graphics.drawable.BitmapDrawable
+import androidx.palette.graphics.Palette
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.lastwave.app.data.local.db.SongPlayStatsEntity
 import com.lastwave.app.data.music.InnerTubeMusicApi
 import com.lastwave.app.data.music.YouTubeMusicTrack
@@ -14,7 +21,9 @@ import com.lastwave.app.playback.MusicPlayer
 import com.lastwave.app.playback.PlayableTrack
 import com.lastwave.app.playback.toPlayableTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,12 +50,47 @@ class TvHomeViewModel @Inject constructor(
     private val innerTube: InnerTubeMusicApi,
     private val lyricsRepository: com.lastwave.app.data.lyrics.LyricsRepository,
     private val canvasRepository: com.lastwave.app.data.canvas.CanvasRepository,
-    private val paletteExtractor: com.lastwave.app.data.repository.NowPlayingPaletteExtractor,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
-    /** Artwork accent for the TV hero's ambient glow (phone-parity Palette). */
-    suspend fun extractAmbientAccent(artworkUrl: String): String? =
-        paletteExtractor.extractAccentHex(artworkUrl)
+    private var ambientCacheUrl: String? = null
+    private var ambientCacheHex: String? = null
+
+    /**
+     * Artwork accent for the TV's ambient glow — memoized by URL. The home
+     * root and the hero both derive from the same artwork, so the second
+     * caller is an instant cache hit instead of a second decode, and the
+     * decode itself is capped at 256 px (Palette quantises far below that),
+     * keeping track changes cheap on low-RAM TV hardware. Swatch preference
+     * matches the phone extractor exactly.
+     */
+    suspend fun extractAmbientAccent(artworkUrl: String): String? {
+        if (artworkUrl == ambientCacheUrl) return ambientCacheHex
+        val hex = withContext(Dispatchers.IO) {
+            try {
+                val request = ImageRequest.Builder(appContext)
+                    .data(artworkUrl)
+                    .size(256)
+                    .allowHardware(false) // Palette reads pixels: software bitmap
+                    .build()
+                val result = appContext.imageLoader.execute(request)
+                val bitmap = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap
+                    ?: return@withContext null
+                val palette = Palette.from(bitmap).generate()
+                val swatch = palette.vibrantSwatch
+                    ?: palette.dominantSwatch
+                    ?: palette.mutedSwatch
+                    ?: return@withContext null
+                val rgb = swatch.rgb
+                "#%02X%02X%02X".format((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        ambientCacheUrl = artworkUrl
+        ambientCacheHex = hex
+        return hex
+    }
 
     var topTracks by mutableStateOf<List<SongPlayStatsEntity>>(emptyList())
         private set
