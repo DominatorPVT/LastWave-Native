@@ -78,7 +78,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -87,6 +90,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -110,6 +114,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
+import android.os.Build
 import coil.compose.AsyncImage
 import com.lastwave.app.R
 import com.lastwave.app.data.local.db.SongPlayStatsEntity
@@ -205,6 +210,13 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val playFocus = remember { FocusRequester() }
     val railHomeFocus = remember { FocusRequester() }
+
+    // Ambient accent for the pane-wide backdrop — same Palette extraction the
+    // hero glow uses (Coil caches the decode, so this is a cache hit).
+    val rootAmbientHex = remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(chrome.current?.artworkUrl) {
+        rootAmbientHex.value = chrome.current?.artworkUrl?.let { viewModel.extractAmbientAccent(it) }
+    }
     val keyboard = LocalSoftwareKeyboardController.current
     val hasTrack = chrome.current != null
 
@@ -272,6 +284,14 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                     // one press away, in every row and every scroll position.
                     .focusProperties { left = railHomeFocus },
             ) {
+                // BitCord-style backdrop: the current artwork blurred across
+                // the top, dissolving into the page colour, with two soft
+                // accent blobs keeping it alive below. Always tinted by the
+                // track's palette colour, on every API level.
+                TvArtworkBackdrop(
+                    artworkUrl = chrome.current?.artworkUrl,
+                    accentHex = rootAmbientHex,
+                )
                 when (tab) {
                     TvTab.HOME -> TvHomeTab(
                         viewModel = viewModel,
@@ -378,42 +398,127 @@ private fun TvRailItem(
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    // ArchiveTune's rail grammar: wide soft pills, a bouncy lift on focus,
+    // and a distinct surface colour per state (focused / selected / idle).
+    val pillScale by animateFloatAsState(
+        targetValue = if (isFocused) 1.05f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "tvRailPillScale",
+    )
     Column(
-        modifier = modifier,
+        modifier = modifier.width(104.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .size(56.dp)
-                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 10.dp)
-                .clip(CircleShape)
+                .scale(pillScale)
+                .tvLift(focused = isFocused, shape = RoundedCornerShape(28.dp), focusedScale = 1f, elevation = 10.dp)
+                .clip(RoundedCornerShape(28.dp))
                 .background(
                     when {
-                        selected -> MaterialTheme.colorScheme.primaryContainer
-                        isFocused -> MaterialTheme.colorScheme.surfaceContainerHigh
-                        else -> Color.Transparent
+                        isFocused -> MaterialTheme.colorScheme.secondaryContainer
+                        selected -> MaterialTheme.colorScheme.surfaceContainerHighest
+                        else -> MaterialTheme.colorScheme.surfaceContainerLow
                     }
                 )
                 .onFocusChanged { isFocused = it.isFocused }
-                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-            contentAlignment = Alignment.Center,
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = when {
-                    selected -> MaterialTheme.colorScheme.onPrimaryContainer
-                    isFocused -> MaterialTheme.colorScheme.onSurface
+                    isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
+                    selected -> MaterialTheme.colorScheme.onSurface
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = when {
+                    isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
+                    selected -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
             )
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+    }
+}
+
+/**
+ * BitCord's ArtworkBackdrop, adapted to the TV pane: the current artwork
+ * blurred across the top (API 31+ only — RenderEffect), dissolving down into
+ * the page colour through the artwork's own tint, and two soft radial accent
+ * blobs below so the lower half never reads as dead black. The blobs are a
+ * plain Canvas draw — no image, no blur — so they cost the same on every
+ * device.
+ */
+@Composable
+private fun TvArtworkBackdrop(
+    artworkUrl: String?,
+    accentHex: String?,
+    modifier: Modifier = Modifier,
+) {
+    val tint = accentHex
+        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+        ?: MaterialTheme.colorScheme.primary
+    val background = MaterialTheme.colorScheme.background
+    Box(modifier.background(Color.Transparent)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.62f)
+                    // Overscaled so the blur's clamped edges never reach a
+                    // visible one.
+                    .graphicsLayer {
+                        scaleX = 1.4f
+                        scaleY = 1.4f
+                    }
+                    .blur(64.dp, BlurredEdgeTreatment.Unbounded),
+            )
+        }
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            fun blob(color: Color, at: Offset, radiusFraction: Float) {
+                val center = Offset(at.x * size.width, at.y * size.height)
+                val radius = size.width * radiusFraction
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(color, color.copy(alpha = 0f)),
+                        center = center,
+                        radius = radius,
+                    ),
+                    radius = radius,
+                    center = center,
+                )
+            }
+            blob(tint.copy(alpha = 0.14f), Offset(0.10f, 0.52f), 0.85f)
+            blob(tint.copy(alpha = 0.10f), Offset(0.95f, 0.80f), 0.95f)
+        }
+        // Dissolve the blurred art (and tint) into the page colour.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to tint.copy(alpha = 0.34f),
+                        0.22f to tint.copy(alpha = 0.46f),
+                        0.55f to tint.copy(alpha = 0.72f),
+                        0.85f to background,
+                    ),
+                ),
         )
     }
 }
