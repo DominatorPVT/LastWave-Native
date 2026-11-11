@@ -75,6 +75,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
@@ -130,6 +131,7 @@ import com.lastwave.app.R
 import com.lastwave.app.data.local.db.SongPlayStatsEntity
 import com.lastwave.app.data.music.YouTubeMusicTrack
 import com.lastwave.app.playback.PlayableTrack
+import com.lastwave.app.ui.player.LyricsUiState
 import com.lastwave.app.ui.theme.ArtworkShape
 import java.time.LocalDate
 import java.time.LocalTime
@@ -709,6 +711,25 @@ private fun TvNowPlayingHero(
         animationSpec = tween(durationMillis = 160),
         label = "tvSeekRing",
     )
+    // Live "now singing" line for the gap between the progress bar and the
+    // controls. Only synced lyrics surface here — plain or missing lyrics
+    // render nothing (the round Lyrics button on the right still opens the
+    // full view). Deriving from the position flow keeps per-tick work to a
+    // single scan, mirroring the Lyrics tab's own behaviour.
+    val heroLyricLines = (viewModel.lyricsState as? LyricsUiState.Success)
+        ?.takeIf { it.isSynced }
+        ?.lines
+        .orEmpty()
+    val heroLyricLine by remember(heroLyricLines) {
+        derivedStateOf {
+            val positionMs = progress.positionMs
+            var text: String? = null
+            for (line in heroLyricLines) {
+                if (line.timeMs <= positionMs) text = line.text else break
+            }
+            text
+        }
+    }
     val track: PlayableTrack? = chrome.current
 
     val canvas = viewModel.canvas
@@ -950,6 +971,29 @@ private fun TvNowPlayingHero(
                                 .background(MaterialTheme.colorScheme.onPrimary)
                                 .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
                         )
+                    }
+                    // Synced lyric line living in the gap under the progress
+                    // bar: fades/slides between lines in sync with playback,
+                    // disappears entirely when a track has no synced lyrics.
+                    AnimatedContent(
+                        targetState = heroLyricLine,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(durationMillis = 220)) +
+                                slideInVertically(animationSpec = tween(durationMillis = 220)) { it / 3 })
+                                .togetherWith(fadeOut(animationSpec = tween(durationMillis = 120)))
+                        },
+                        label = "tvHeroLyricLine",
+                    ) { line ->
+                        if (line != null) {
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
