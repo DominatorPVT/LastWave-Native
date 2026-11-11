@@ -2,6 +2,14 @@ package com.lastwave.app.ui.tv
 
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -292,19 +300,31 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                     artworkUrl = chrome.current?.artworkUrl,
                     accentHex = rootAmbientHex.value,
                 )
-                when (tab) {
-                    TvTab.HOME -> TvHomeTab(
-                        viewModel = viewModel,
-                        playFocus = playFocus,
-                        onSelectSearch = { tab = TvTab.SEARCH },
-                        onOpenLyrics = { tab = TvTab.LYRICS },
-                        onOpenQueue = { tab = TvTab.QUEUE },
-                    )
-                    TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
-                    TvTab.LIBRARY -> TvLibraryTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
-                    TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
-                    TvTab.SEARCH -> TvSearchTab(viewModel)
-                    TvTab.SETTINGS -> TvSettingsTab()
+                // Smooth pane changes: the outgoing tab dissolves away while
+                // the incoming one drifts up into place — fast, calm, no bounce.
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        val enter = fadeIn(animationSpec = tween(durationMillis = 240, delayMillis = 50)) +
+                            slideInVertically(animationSpec = tween(durationMillis = 240, delayMillis = 50)) { it / 24 }
+                        enter.togetherWith(fadeOut(animationSpec = tween(durationMillis = 140)))
+                    },
+                    label = "tvTabPane",
+                ) { pane ->
+                    when (pane) {
+                        TvTab.HOME -> TvHomeTab(
+                            viewModel = viewModel,
+                            playFocus = playFocus,
+                            onSelectSearch = { tab = TvTab.SEARCH },
+                            onOpenLyrics = { tab = TvTab.LYRICS },
+                            onOpenQueue = { tab = TvTab.QUEUE },
+                        )
+                        TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
+                        TvTab.LIBRARY -> TvLibraryTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
+                        TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
+                        TvTab.SEARCH -> TvSearchTab(viewModel)
+                        TvTab.SETTINGS -> TvSettingsTab()
+                    }
                 }
             }
         }
@@ -376,7 +396,19 @@ private fun TvNavRail(
             onClick = { onSelect(TvTab.SETTINGS) },
         )
         Spacer(modifier = Modifier.weight(1f))
-        if (isPlaying) {
+        // "Playing" badge fades and pops in instead of appearing abruptly.
+        AnimatedVisibility(
+            visible = isPlaying,
+            enter = fadeIn(animationSpec = tween(durationMillis = 300)) +
+                scaleIn(
+                    initialScale = 0.6f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium,
+                    ),
+                ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 180)),
+        ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                 contentDescription = null,
@@ -408,6 +440,35 @@ private fun TvRailItem(
         ),
         label = "tvRailPillScale",
     )
+    // Focus colours glide instead of snapping — the pill reads as one
+    // continuously morphing surface as the remote moves between entries.
+    val pillColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.secondaryContainer
+            selected -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvRailPillColor",
+    )
+    val pillIconTint by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
+            selected -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvRailIconTint",
+    )
+    val pillLabelColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
+            selected -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvRailLabelColor",
+    )
     Column(
         modifier = modifier.width(104.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -417,13 +478,7 @@ private fun TvRailItem(
                 .scale(pillScale)
                 .tvLift(focused = isFocused, shape = RoundedCornerShape(28.dp), focusedScale = 1f, elevation = 10.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(
-                    when {
-                        isFocused -> MaterialTheme.colorScheme.secondaryContainer
-                        selected -> MaterialTheme.colorScheme.surfaceContainerHighest
-                        else -> MaterialTheme.colorScheme.surfaceContainerLow
-                    }
-                )
+                .background(pillColor)
                 .onFocusChanged { isFocused = it.isFocused }
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 14.dp),
@@ -432,22 +487,14 @@ private fun TvRailItem(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = when {
-                    isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
-                    selected -> MaterialTheme.colorScheme.onSurface
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = pillIconTint,
                 modifier = Modifier.size(26.dp),
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = when {
-                    isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
-                    selected -> MaterialTheme.colorScheme.primary
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                color = pillLabelColor,
                 maxLines = 1,
             )
         }
@@ -468,27 +515,42 @@ private fun TvArtworkBackdrop(
     accentHex: String?,
     modifier: Modifier = Modifier,
 ) {
-    val tint = accentHex
+    val parsedTint = accentHex
         ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
         ?: MaterialTheme.colorScheme.primary
+    // Palette shifts glide over ~0.7 s when the track (and its colour) changes.
+    val tint by animateColorAsState(
+        targetValue = parsedTint,
+        animationSpec = tween(durationMillis = 700),
+        label = "tvBackdropTint",
+    )
     val background = MaterialTheme.colorScheme.background
     Box(modifier.background(Color.Transparent)) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && artworkUrl != null) {
-            AsyncImage(
-                model = artworkUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.62f)
-                    // Overscaled so the blur's clamped edges never reach a
-                    // visible one.
-                    .graphicsLayer {
-                        scaleX = 1.4f
-                        scaleY = 1.4f
-                    }
-                    .blur(64.dp, BlurredEdgeTreatment.Unbounded),
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Artwork changes dissolve instead of hard-cutting.
+            Crossfade(
+                targetState = artworkUrl,
+                animationSpec = tween(durationMillis = 380),
+                label = "tvBackdropArt",
+            ) { url ->
+                if (url != null) {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.62f)
+                            // Overscaled so the blur's clamped edges never reach a
+                            // visible one.
+                            .graphicsLayer {
+                                scaleX = 1.4f
+                                scaleY = 1.4f
+                            }
+                            .blur(64.dp, BlurredEdgeTreatment.Unbounded),
+                    )
+                }
+            }
         }
         Canvas(modifier = Modifier.fillMaxSize()) {
             fun blob(color: Color, at: Offset, radiusFraction: Float) {
@@ -626,6 +688,20 @@ private fun TvNowPlayingHero(
     val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle()
     val seekBarFocus = remember { FocusRequester() }
     var seekBarFocused by remember { mutableStateOf(false) }
+    val seekPill by animateColorAsState(
+        targetValue = if (seekBarFocused) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "tvSeekPill",
+    )
+    val seekRing by animateColorAsState(
+        targetValue = if (seekBarFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(durationMillis = 160),
+        label = "tvSeekRing",
+    )
     val track: PlayableTrack? = chrome.current
 
     val canvas = viewModel.canvas
@@ -706,7 +782,14 @@ private fun TvNowPlayingHero(
                             .clip(ArtworkShape),
                     )
                 } else {
-                    TvArtwork(artworkUrl = track?.artworkUrl, size = 220.dp)
+                    // Static art dissolves into the next track's cover.
+                    Crossfade(
+                        targetState = track?.artworkUrl,
+                        animationSpec = tween(durationMillis = 420),
+                        label = "tvHeroArt",
+                    ) { url ->
+                        TvArtwork(artworkUrl = url, size = 220.dp)
+                    }
                 }
             }
             Column(
@@ -719,18 +802,21 @@ private fun TvNowPlayingHero(
                     // it opens Search.
                     val interaction = remember { MutableInteractionSource() }
                     var promptFocused by remember { mutableStateOf(false) }
+    val promptPanelColor by animateColorAsState(
+        targetValue = if (promptFocused) {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "tvPromptPanel",
+    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .tvLift(focused = promptFocused, shape = RoundedCornerShape(20.dp), focusedScale = 1.02f)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                if (promptFocused) {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerLow
-                                }
-                            )
+                            .background(promptPanelColor)
                             .onFocusChanged { promptFocused = it.isFocused }
                             .clickable(interactionSource = interaction, indication = null, onClick = onSelectSearch)
                             .padding(horizontal = 24.dp, vertical = 28.dp),
@@ -796,20 +882,10 @@ private fun TvNowPlayingHero(
                                 true
                             }
                             .clip(RoundedCornerShape(percent = 50))
-                            .background(
-                                if (seekBarFocused) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                                } else {
-                                    Color.Transparent
-                                }
-                            )
+                            .background(seekPill)
                             .border(
                                 width = 3.dp,
-                                color = if (seekBarFocused) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    Color.Transparent
-                                },
+                                color = seekRing,
                                 shape = RoundedCornerShape(percent = 50),
                             )
                             .padding(horizontal = 12.dp),
@@ -940,6 +1016,20 @@ private fun TvNowPlayingHero(
 private fun TvHeroLyricsButton(onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    val heroDiscColor by animateColorAsState(
+        targetValue = if (isFocused) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "tvHeroDiscColor",
+    )
+    val heroLabelColor by animateColorAsState(
+        targetValue = if (isFocused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(durationMillis = 160),
+        label = "tvHeroLabelColor",
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -949,13 +1039,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
                 .size(76.dp)
                 .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 12.dp)
                 .clip(CircleShape)
-                .background(
-                    if (isFocused) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    }
-                )
+                .background(heroDiscColor)
                 .onFocusChanged { isFocused = it.isFocused }
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick),
             contentAlignment = Alignment.Center,
@@ -970,11 +1054,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
         Text(
             text = stringResource(R.string.tv_tab_lyrics),
             style = MaterialTheme.typography.labelMedium,
-            color = if (isFocused) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            color = heroLabelColor,
         )
     }
 }
@@ -984,6 +1064,20 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
 private fun TvHeroQueueButton(onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    val heroDiscColor by animateColorAsState(
+        targetValue = if (isFocused) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "tvHeroDiscColor",
+    )
+    val heroLabelColor by animateColorAsState(
+        targetValue = if (isFocused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(durationMillis = 160),
+        label = "tvHeroLabelColor",
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -993,13 +1087,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
                 .size(76.dp)
                 .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 12.dp)
                 .clip(CircleShape)
-                .background(
-                    if (isFocused) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    }
-                )
+                .background(heroDiscColor)
                 .onFocusChanged { isFocused = it.isFocused }
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick),
             contentAlignment = Alignment.Center,
@@ -1014,11 +1102,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
         Text(
             text = stringResource(R.string.tv_tab_queue),
             style = MaterialTheme.typography.labelMedium,
-            color = if (isFocused) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            color = heroLabelColor,
         )
     }
 }
@@ -1039,6 +1123,23 @@ private fun TvTransportButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    val transportBackground by animateColorAsState(
+        targetValue = when {
+            isFocused && containerColor == Color.Transparent -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> containerColor
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvTransportBackground",
+    )
+    val transportTint by animateColorAsState(
+        targetValue = when {
+            isFocused && containerColor == Color.Transparent -> MaterialTheme.colorScheme.onSurface
+            active && containerColor == Color.Transparent -> MaterialTheme.colorScheme.primary
+            else -> iconTint
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvTransportTint",
+    )
     Box(
         modifier = modifier
             .size(buttonSize)
@@ -1049,12 +1150,7 @@ private fun TvTransportButton(
                 elevation = 10.dp,
             )
             .clip(TransportShape)
-            .background(
-                when {
-                    isFocused && containerColor == Color.Transparent -> MaterialTheme.colorScheme.surfaceContainerHighest
-                    else -> containerColor
-                }
-            )
+            .background(transportBackground)
             .onFocusChanged { isFocused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -1062,15 +1158,7 @@ private fun TvTransportButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (isFocused && containerColor == Color.Transparent) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                if (active && containerColor == Color.Transparent) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    iconTint
-                }
-            },
+            tint = transportTint,
             modifier = Modifier.size(iconSize),
         )
     }
@@ -1201,6 +1289,12 @@ private fun TvTrackCard(
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    // Gentle Ken-Burns push on focus — the card breathes towards you.
+    val artZoom by animateFloatAsState(
+        targetValue = if (isFocused) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 220),
+        label = "tvCardArtZoom",
+    )
     Column(
         modifier = Modifier
             .width(184.dp)
@@ -1220,7 +1314,12 @@ private fun TvTrackCard(
                     model = artworkUrl,
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = artZoom
+                            scaleY = artZoom
+                        },
                 )
             } else {
                 Icon(
@@ -1353,6 +1452,11 @@ private fun TvSearchTab(viewModel: TvHomeViewModel) {
 private fun TvSearchResultRow(track: YouTubeMusicTrack, onPlay: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    val rowBackground by animateColorAsState(
+        targetValue = if (isFocused) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+        animationSpec = tween(durationMillis = 160),
+        label = "tvSearchRowBackground",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1363,7 +1467,7 @@ private fun TvSearchResultRow(track: YouTubeMusicTrack, onPlay: () -> Unit) {
                 elevation = 8.dp,
             )
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isFocused) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)
+            .background(rowBackground)
             .onFocusChanged { isFocused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, onClick = onPlay)
             .padding(8.dp),
