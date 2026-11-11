@@ -575,8 +575,8 @@ private fun TvArtworkBackdrop(
                     center = center,
                 )
             }
-            blob(tint.copy(alpha = 0.14f), Offset(0.10f, 0.52f), 0.85f)
-            blob(tint.copy(alpha = 0.10f), Offset(0.95f, 0.80f), 0.95f)
+            blob(tint.copy(alpha = 0.10f), Offset(0.10f, 0.52f), 0.85f)
+            blob(tint.copy(alpha = 0.07f), Offset(0.95f, 0.80f), 0.95f)
         }
         // Dissolve the blurred art (and tint) into the page colour.
         Box(
@@ -584,10 +584,10 @@ private fun TvArtworkBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to tint.copy(alpha = 0.34f),
-                        0.22f to tint.copy(alpha = 0.46f),
-                        0.55f to tint.copy(alpha = 0.72f),
-                        0.85f to background,
+                        0f to tint.copy(alpha = 0.24f),
+                        0.22f to tint.copy(alpha = 0.34f),
+                        0.50f to tint.copy(alpha = 0.55f),
+                        0.72f to background,
                     ),
                 ),
         )
@@ -692,46 +692,8 @@ private fun TvNowPlayingHero(
     onOpenQueue: () -> Unit,
 ) {
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
-    val progress by viewModel.musicPlayer.progressState.collectAsStateWithLifecycle()
     val shuffle by viewModel.shuffleEnabled.collectAsStateWithLifecycle()
     val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle()
-    val seekBarFocus = remember { FocusRequester() }
-    var seekBarFocused by remember { mutableStateOf(false) }
-    val seekPill by animateColorAsState(
-        targetValue = if (seekBarFocused) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-        } else {
-            Color.Transparent
-        },
-        animationSpec = tween(durationMillis = 160),
-        label = "tvSeekPill",
-    )
-    val seekRing by animateColorAsState(
-        targetValue = if (seekBarFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
-        animationSpec = tween(durationMillis = 160),
-        label = "tvSeekRing",
-    )
-    // Live "now singing" line for the gap between the progress bar and the
-    // controls. Only synced lyrics surface here — plain or missing lyrics
-    // render nothing (the round Lyrics button on the right still opens the
-    // full view). Deriving from the position flow keeps per-tick work to a
-    // single scan, mirroring the Lyrics tab's own behaviour.
-    val heroLyricLines = (viewModel.lyricsState as? LyricsUiState.Success)
-        ?.takeIf { it.isSynced }
-        ?.lines
-        .orEmpty()
-    val heroLyricLine by remember(heroLyricLines) {
-        derivedStateOf {
-            val positionMs = progress.positionMs
-            var text: String? = null
-            for (line in heroLyricLines) {
-                if (line.timeMs <= positionMs) text = line.text else break
-            }
-            text
-        }
-    }
-    val track: PlayableTrack? = chrome.current
-
     val canvas = viewModel.canvas
     // Ambient color from the track artwork — the same Palette extraction the
     // phone's dynamic theme uses, fetched off the main thread on artwork
@@ -747,14 +709,14 @@ private fun TvNowPlayingHero(
     // Static-artwork tracks (no Canvas) get a slightly stronger glow —
     // there is more empty panel for the album color to fill.
     val heroWash = when {
-        !heroActive -> 0.12f
-        canvas != null -> 0.30f
-        else -> 0.36f
+        !heroActive -> 0.10f
+        canvas != null -> 0.22f
+        else -> 0.28f
     }
     val heroHalo = when {
-        !heroActive -> 0.14f
-        canvas != null -> 0.42f
-        else -> 0.50f
+        !heroActive -> 0.12f
+        canvas != null -> 0.32f
+        else -> 0.38f
     }
     val ambient by animateColorAsState(
         targetValue = ambientBase,
@@ -895,121 +857,8 @@ private fun TvNowPlayingHero(
                     // Focus is unmissable: the whole strip gets a brand ring, a
                     // tinted pill backdrop, the bar doubles in height and the
                     // thumb blooms (BitChord-style slider affordance).
-                    BoxWithConstraints(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(36.dp)
-                            .focusRequester(seekBarFocus)
-                            .focusable()
-                            .onFocusChanged { seekBarFocused = it.isFocused }
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                val delta = when (event.key) {
-                                    Key.DirectionRight -> 10_000L
-                                    Key.DirectionLeft -> -10_000L
-                                    else -> return@onPreviewKeyEvent false
-                                }
-                                viewModel.seekTo(
-                                    (progress.positionMs + delta).coerceIn(0L, progress.durationMs),
-                                )
-                                true
-                            }
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(seekPill)
-                            .border(
-                                width = 3.dp,
-                                color = seekRing,
-                                shape = RoundedCornerShape(percent = 50),
-                            )
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        val fraction = if (progress.durationMs > 0) {
-                            (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
-                        } else 0f
-                        val smoothFraction by animateFloatAsState(
-                            targetValue = fraction,
-                            animationSpec = tween(durationMillis = 120, easing = LinearEasing),
-                            label = "tvSeekFraction",
-                        )
-                        val barHeight by animateDpAsState(
-                            targetValue = if (seekBarFocused) 12.dp else 6.dp,
-                            animationSpec = LiftShadowSpring,
-                            label = "tvSeekHeight",
-                        )
-                        val thumbSize by animateDpAsState(
-                            targetValue = if (seekBarFocused) 26.dp else 14.dp,
-                            animationSpec = LiftShadowSpring,
-                            label = "tvSeekThumb",
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(barHeight)
-                                .clip(RoundedCornerShape(percent = 50))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(smoothFraction)
-                                .height(barHeight)
-                                .clip(RoundedCornerShape(percent = 50))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.primary,
-                                            MaterialTheme.colorScheme.tertiary,
-                                        ),
-                                    ),
-                                ),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .offset(x = (maxWidth - thumbSize) * smoothFraction)
-                                .size(thumbSize)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onPrimary)
-                                .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                        )
-                    }
-                    // Synced lyric line living in the gap under the progress
-                    // bar: fades/slides between lines in sync with playback,
-                    // disappears entirely when a track has no synced lyrics.
-                    AnimatedContent(
-                        targetState = heroLyricLine,
-                        transitionSpec = {
-                            (fadeIn(animationSpec = tween(durationMillis = 220)) +
-                                slideInVertically(animationSpec = tween(durationMillis = 220)) { it / 3 })
-                                .togetherWith(fadeOut(animationSpec = tween(durationMillis = 120)))
-                        },
-                        label = "tvHeroLyricLine",
-                    ) { line ->
-                        if (line != null) {
-                            Text(
-                                text = line,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    TvHeroProgressBlock(viewModel = viewModel)
+
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1064,6 +913,170 @@ private fun TvNowPlayingHero(
                 }
             }
         }
+    }
+}
+
+/**
+ * The hero's position-driven section — live synced lyric line above the
+ * D-pad seek strip, then the strip and the timestamps — composed in one
+ * small scope so the frequent position ticks never recompose the hero's
+ * artwork, titles or transport controls.
+ */
+@Composable
+private fun TvHeroProgressBlock(viewModel: TvHomeViewModel) {
+    val progress by viewModel.musicPlayer.progressState.collectAsStateWithLifecycle()
+    val seekBarFocus = remember { FocusRequester() }
+    var seekBarFocused by remember { mutableStateOf(false) }
+    val seekPill by animateColorAsState(
+        targetValue = if (seekBarFocused) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 160),
+        label = "tvSeekPill",
+    )
+    val seekRing by animateColorAsState(
+        targetValue = if (seekBarFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(durationMillis = 160),
+        label = "tvSeekRing",
+    )
+    // Live "now singing" line shown above the seek strip. Only synced lyrics
+    // surface here — plain or missing lyrics render nothing (the round
+    // Lyrics button on the right still opens the full view). Deriving from
+    // the position flow keeps per-tick work to a single scan, mirroring the
+    // Lyrics tab's own behaviour.
+    val heroLyricLines = (viewModel.lyricsState as? LyricsUiState.Success)
+        ?.takeIf { it.isSynced }
+        ?.lines
+        .orEmpty()
+    val heroLyricLine by remember(heroLyricLines) {
+        derivedStateOf {
+            val positionMs = progress.positionMs
+            var text: String? = null
+            for (line in heroLyricLines) {
+                if (line.timeMs <= positionMs) text = line.text else break
+            }
+            text
+        }
+    }
+    val track: PlayableTrack? = chrome.current
+
+
+    // Live synced lyric line above the progress bar: fades and slides
+    // between lines in sync with playback, and disappears entirely when a
+    // track has no synced lyrics.
+    AnimatedContent(
+        targetState = heroLyricLine,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(durationMillis = 220)) +
+                slideInVertically(animationSpec = tween(durationMillis = 220)) { it / 3 })
+                .togetherWith(fadeOut(animationSpec = tween(durationMillis = 120)))
+        },
+        label = "tvHeroLyricLine",
+    ) { line ->
+        if (line != null) {
+            Text(
+                text = line,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .focusRequester(seekBarFocus)
+            .focusable()
+            .onFocusChanged { seekBarFocused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val delta = when (event.key) {
+                    Key.DirectionRight -> 10_000L
+                    Key.DirectionLeft -> -10_000L
+                    else -> return@onPreviewKeyEvent false
+                }
+                viewModel.seekTo(
+                    (progress.positionMs + delta).coerceIn(0L, progress.durationMs),
+                )
+                true
+            }
+            .clip(RoundedCornerShape(percent = 50))
+            .background(seekPill)
+            .border(
+                width = 3.dp,
+                color = seekRing,
+                shape = RoundedCornerShape(percent = 50),
+            )
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val fraction = if (progress.durationMs > 0) {
+            (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
+        } else 0f
+        val smoothFraction by animateFloatAsState(
+            targetValue = fraction,
+            animationSpec = tween(durationMillis = 120, easing = LinearEasing),
+            label = "tvSeekFraction",
+        )
+        val barHeight by animateDpAsState(
+            targetValue = if (seekBarFocused) 12.dp else 6.dp,
+            animationSpec = LiftShadowSpring,
+            label = "tvSeekHeight",
+        )
+        val thumbSize by animateDpAsState(
+            targetValue = if (seekBarFocused) 26.dp else 14.dp,
+            animationSpec = LiftShadowSpring,
+            label = "tvSeekThumb",
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(barHeight)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(smoothFraction)
+                .height(barHeight)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.tertiary,
+                        ),
+                    ),
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .offset(x = (maxWidth - thumbSize) * smoothFraction)
+                .size(thumbSize)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onPrimary)
+                .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
+        )
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
