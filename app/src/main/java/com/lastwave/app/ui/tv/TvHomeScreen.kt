@@ -694,6 +694,7 @@ private fun TvNowPlayingHero(
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val shuffle by viewModel.shuffleEnabled.collectAsStateWithLifecycle()
     val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle()
+    val track: PlayableTrack? = chrome.current
     val canvas = viewModel.canvas
     // Ambient color from the track artwork — the same Palette extraction the
     // phone's dynamic theme uses, fetched off the main thread on artwork
@@ -960,7 +961,6 @@ private fun TvHeroProgressBlock(viewModel: TvHomeViewModel) {
             text
         }
     }
-    val track: PlayableTrack? = chrome.current
 
 
     // Live synced lyric line above the progress bar: fades and slides
