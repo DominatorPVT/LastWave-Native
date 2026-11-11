@@ -290,7 +290,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                 // track's palette colour, on every API level.
                 TvArtworkBackdrop(
                     artworkUrl = chrome.current?.artworkUrl,
-                    accentHex = rootAmbientHex,
+                    accentHex = rootAmbientHex.value,
                 )
                 when (tab) {
                     TvTab.HOME -> TvHomeTab(
