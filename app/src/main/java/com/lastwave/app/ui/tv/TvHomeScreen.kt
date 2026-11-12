@@ -170,7 +170,7 @@ internal fun Modifier.tvLift(
     focused: Boolean,
     shape: Shape,
     focusedScale: Float = 1.06f,
-    elevation: Dp = 12.dp,
+    elevation: Dp = 8.dp,
     pressed: Boolean = false,
 ): Modifier {
     val scale by animateFloatAsState(
@@ -480,7 +480,7 @@ private fun TvRailItem(
         Column(
             modifier = Modifier
                 .scale(pillScale)
-                .tvLift(focused = isFocused, shape = RoundedCornerShape(28.dp), focusedScale = 1f, elevation = 10.dp)
+                .tvLift(focused = isFocused, shape = RoundedCornerShape(28.dp), focusedScale = 1f, elevation = 7.dp)
                 .clip(RoundedCornerShape(28.dp))
                 .background(pillColor)
                 .onFocusChanged { isFocused = it.isFocused }
@@ -529,8 +529,16 @@ private fun TvArtworkBackdrop(
         label = "tvBackdropTint",
     )
     val background = MaterialTheme.colorScheme.background
+    // Real-time blur is the single most expensive thing on low-end TV GPUs.
+    // Low-RAM devices skip it and keep the tinted blobs + gradient — still
+    // colourful, zero blur cost. Everywhere else the radius is trimmed.
+    val canAffordBlur = remember(LocalContext.current) {
+        val am = LocalContext.current.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+            as? android.app.ActivityManager
+        am?.isLowRamDevice != true
+    }
     Box(modifier.background(Color.Transparent)) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && canAffordBlur) {
             // Artwork changes dissolve instead of hard-cutting.
             Crossfade(
                 targetState = artworkUrl,
@@ -556,7 +564,7 @@ private fun TvArtworkBackdrop(
                                 scaleX = 1.4f
                                 scaleY = 1.4f
                             }
-                            .blur(64.dp, BlurredEdgeTreatment.Unbounded),
+                            .blur(40.dp, BlurredEdgeTreatment.Unbounded),
                     )
                 }
             }
@@ -1106,7 +1114,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(76.dp)
-                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 12.dp)
+                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 8.dp)
                 .clip(CircleShape)
                 .background(heroDiscColor)
                 .onFocusChanged { isFocused = it.isFocused }
@@ -1154,7 +1162,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(76.dp)
-                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 12.dp)
+                .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 8.dp)
                 .clip(CircleShape)
                 .background(heroDiscColor)
                 .onFocusChanged { isFocused = it.isFocused }
@@ -1216,7 +1224,7 @@ private fun TvTransportButton(
                 focused = isFocused,
                 shape = TransportShape,
                 focusedScale = 1.14f,
-                elevation = 10.dp,
+                elevation = 6.dp,
             )
             .clip(TransportShape)
             .background(transportBackground)
@@ -1367,7 +1375,7 @@ private fun TvTrackCard(
     Column(
         modifier = Modifier
             .width(184.dp)
-            .tvLift(focused = isFocused, shape = ArtworkShape, focusedScale = 1.07f, elevation = 14.dp)
+            .tvLift(focused = isFocused, shape = ArtworkShape, focusedScale = 1.07f, elevation = 10.dp)
             .onFocusChanged { isFocused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
     ) {
@@ -1400,6 +1408,30 @@ private fun TvTrackCard(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(48.dp),
+                )
+            }
+            // Spotify-TV affordance: a play badge blooms on the focused card.
+            val badgeScale by animateFloatAsState(
+                targetValue = if (isFocused) 1f else 0.4f,
+                animationSpec = LiftScaleSpring,
+                label = "tvCardBadgeScale",
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(10.dp)
+                    .scale(badgeScale)
+                    .alpha(if (isFocused) 1f else 0f)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }
@@ -1543,7 +1575,7 @@ private fun TvSearchResultRow(track: YouTubeMusicTrack, onPlay: () -> Unit) {
                 focused = isFocused,
                 shape = RoundedCornerShape(16.dp),
                 focusedScale = 1.015f,
-                elevation = 8.dp,
+                elevation = 5.dp,
             )
             .clip(RoundedCornerShape(16.dp))
             .background(rowBackground)

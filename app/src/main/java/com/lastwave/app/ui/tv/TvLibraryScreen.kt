@@ -201,7 +201,7 @@ private fun TvLibraryRow(
                 focused = isFocused,
                 shape = RoundedCornerShape(16.dp),
                 focusedScale = 1.015f,
-                elevation = 8.dp,
+                elevation = 5.dp,
             )
             .clip(RoundedCornerShape(16.dp))
             .background(

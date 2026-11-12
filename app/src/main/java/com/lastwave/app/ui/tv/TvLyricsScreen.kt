@@ -27,6 +27,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -222,16 +225,27 @@ private const val LYRICS_SCROLL_STEP_DP = 96
 
 @Composable
 private fun TvLyricLineRow(line: LyricLine, active: Boolean) {
+    // Colour and emphasis glide between lines instead of snapping.
+    val lineColor by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(durationMillis = 260),
+        label = "tvLyricLineColor",
+    )
+    val lineAlpha by animateFloatAsState(
+        targetValue = if (active) 1f else 0.72f,
+        animationSpec = tween(durationMillis = 260),
+        label = "tvLyricLineAlpha",
+    )
     Text(
         text = line.text,
         style = if (active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        color = lineColor,
         maxLines = 3,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer { alpha = if (active) 1f else 0.8f },
+            .graphicsLayer { alpha = lineAlpha },
     )
 }
 
