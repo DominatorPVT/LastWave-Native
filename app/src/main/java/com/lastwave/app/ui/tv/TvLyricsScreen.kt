@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +79,15 @@ fun TvLyricsTab(
     val lyrics = viewModel.lyricsState
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val track = chrome.current
+
+    // Tab-entry focus: the synced list focuses itself once lyrics exist; in
+    // every other state the rail takes focus so the remote is never dead.
+    LaunchedEffect(lyrics) {
+        withFrameNanos { }
+        if (lyrics !is LyricsUiState.Success) {
+            runCatching { railHomeFocus.requestFocus() }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -166,6 +176,12 @@ private fun TvSyncedLyrics(
     val listState = rememberLazyListState()
     val progress by progressState.collectAsStateWithLifecycle()
     val listFocus = remember { FocusRequester() }
+
+    // The lyrics list is the pane's single D-pad target: grab focus on entry.
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { listFocus.requestFocus() }
+    }
     var lastUserScrollAt by remember { mutableLongStateOf(0L) }
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -273,11 +289,17 @@ private fun TvLyricsPrompt(headline: String, showRetry: Boolean, onRetry: () -> 
             Spacer(modifier = Modifier.height(20.dp))
             val interaction = remember { MutableInteractionSource() }
             var focused by remember { mutableStateOf(false) }
+            val retryFocus = remember { FocusRequester() }
+            LaunchedEffect(showRetry) {
+                withFrameNanos { }
+                runCatching { retryFocus.requestFocus() }
+            }
             Text(
                 text = stringResource(R.string.tv_lyrics_retry),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
+                    .focusRequester(retryFocus)
                     .tvLift(focused = focused, shape = RoundedCornerShape(14.dp), focusedScale = 1.05f)
                     .clip(RoundedCornerShape(14.dp))
                     .background(

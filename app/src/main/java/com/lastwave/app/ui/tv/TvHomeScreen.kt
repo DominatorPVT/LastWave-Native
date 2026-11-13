@@ -17,6 +17,10 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -54,6 +58,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
@@ -287,6 +292,11 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                 isPlaying = chrome.isPlaying,
                 homeItemFocus = railHomeFocus,
             )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            ) {
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -330,6 +340,19 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         TvTab.SETTINGS -> TvSettingsTab()
                     }
                 }
+            }
+            // Spotify-TV pattern: a persistent mini now-playing strip under
+            // every browse pane (Home keeps its full hero instead). It is
+            // informational only — never a focus target — so the remote's
+            // navigation grammar is unchanged.
+            AnimatedVisibility(
+                visible = hasTrack && tab != TvTab.HOME,
+                enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                    slideInVertically(animationSpec = tween(durationMillis = 220)) { it / 3 },
+                exit = fadeOut(animationSpec = tween(durationMillis = 140)),
+            ) {
+                TvMiniNowPlayingBar(viewModel = viewModel)
+            }
             }
         }
     }
@@ -633,6 +656,13 @@ private fun TvHomeTab(
             item(key = "suggested-row") {
                 TvSuggestionShelf(tracks = viewModel.homeSuggestions, onPlay = viewModel::playTrack)
             }
+        } else if (viewModel.suggestionsLoading) {
+            // ArchiveTune/DollBloom-style skeleton shelf: the feed loads with
+            // a visible pulse instead of the section silently missing.
+            item(key = "suggested-skeleton-header") {
+                TvSectionTitle(stringResource(R.string.tv_suggested_for_you))
+            }
+            item(key = "suggested-skeleton") { TvSkeletonShelf() }
         }
         if (viewModel.topTracks.isNotEmpty()) {
             item(key = "top-header") { TvSectionTitle(stringResource(R.string.tv_top_tracks)) }
@@ -646,7 +676,7 @@ private fun TvHomeTab(
                 TvShelfRow(rows = viewModel.recentTracks, onPlay = viewModel::playHistoryRow)
             }
         }
-        if (viewModel.topTracks.isEmpty() && viewModel.recentTracks.isEmpty()) {
+        if (viewModel.topTracks.isEmpty() && viewModel.recentTracks.isEmpty() && viewModel.historyLoaded) {
             item(key = "empty") {
                 Text(
                     text = stringResource(R.string.tv_empty_history),
@@ -1528,6 +1558,9 @@ private fun TvSearchTab(viewModel: TvHomeViewModel) {
                             true
                         }
                         android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            // Results take over: dismiss the IME so the rows
+                            // are fully visible while focus moves down.
+                            keyboard?.hide()
                             focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
                             true
                         }
@@ -1609,5 +1642,143 @@ private fun TvSearchResultRow(track: YouTubeMusicTrack, onPlay: () -> Unit) {
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(28.dp),
         )
+    }
+}
+
+/**
+ * Spotify-TV-style persistent mini now-playing strip: art, title, a hairline
+ * progress bar and elapsed/total. Informational only — never a focus target,
+ * so the D-pad grammar of every pane stays exactly as before; media keys and
+ * the Home hero drive playback.
+ */
+@Composable
+private fun TvMiniNowPlayingBar(viewModel: TvHomeViewModel) {
+    val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
+    val track = chrome.current ?: return
+    // BitCord's bottom fade scrim: content dissolves into the strip instead
+    // of the strip drawing a hard line under the pane.
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.35f to MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
+                    1f to MaterialTheme.colorScheme.background,
+                ),
+            )
+            .padding(start = 48.dp, end = 48.dp, top = 10.dp, bottom = 12.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            TvArtwork(artworkUrl = track.artworkUrl, size = 44.dp)
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = if (chrome.isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        TvMiniProgress(viewModel = viewModel)
+    }
+}
+
+/** Hairline progress under the mini strip — isolated so position ticks recompose only this. */
+@Composable
+private fun TvMiniProgress(viewModel: TvHomeViewModel) {
+    val progress by viewModel.musicPlayer.progressState.collectAsStateWithLifecycle()
+    val fraction = if (progress.durationMs > 0) {
+        (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
+    } else 0f
+    val smoothFraction by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = tween(durationMillis = 120, easing = LinearEasing),
+        label = "tvMiniFraction",
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(3.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(smoothFraction)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+        Text(
+            text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** ArchiveTune/DollBloom-style pulsing skeleton shelf, shown while the feed loads. */
+@Composable
+private fun TvSkeletonShelf() {
+    val pulse = rememberInfiniteTransition(label = "tvSkeletonPulse").animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "tvSkeletonAlpha",
+    ).value
+    Row(horizontalArrangement = Arrangement.spacedBy(SHELF_GAP_DP.dp)) {
+        repeat(5) {
+            Column(modifier = Modifier.width(184.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(184.dp)
+                        .alpha(pulse)
+                        .clip(ArtworkShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .width(128.dp)
+                        .height(14.dp)
+                        .alpha(pulse)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .width(84.dp)
+                        .height(12.dp)
+                        .alpha(pulse)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                )
+            }
+        }
     }
 }

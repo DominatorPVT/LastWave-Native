@@ -1158,4 +1158,8 @@
     <string name="tv_library_one_track">1 ट्रैक</string>
     <string name="tv_library_track_count">%1$d ट्रैक</string>
     <string name="tv_library_loading_songs">गाने लोड हो रहे हैं...</string>
+    <string name="tv_library_sort_recent">हाल के</string>
+    <string name="tv_library_sort_oldest">पुराने</string>
+    <string name="tv_library_sort_az">A–Z</string>
+    <string name="tv_library_sort_tracks">ट्रैक्स</string>
 </resources>

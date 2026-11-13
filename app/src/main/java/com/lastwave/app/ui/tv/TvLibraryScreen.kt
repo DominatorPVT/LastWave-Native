@@ -1,7 +1,10 @@
 package com.lastwave.app.ui.tv
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lastwave.app.R
 import com.lastwave.app.playback.toPlayableTrack
 import com.lastwave.app.ui.playlist.PlaylistViewModel
+import com.lastwave.app.ui.playlist.PlaylistSortMode
 
 /**
  * TV Library — the phone Playlists tab (Room-backed saved playlists via the
@@ -98,6 +103,36 @@ fun TvLibraryTab(
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
+        if (state.playlists.isNotEmpty()) {
+            // ArchiveTune ChipsRow grammar: sort pills above the list. The
+            // first pill is the pane's focus entry target.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TvSortPill(
+                    label = stringResource(R.string.tv_library_sort_recent),
+                    selected = state.sortMode == PlaylistSortMode.DATE_DESC,
+                    onClick = { playlistsViewModel.setSortMode(PlaylistSortMode.DATE_DESC) },
+                    modifier = Modifier.focusRequester(entry),
+                )
+                TvSortPill(
+                    label = stringResource(R.string.tv_library_sort_oldest),
+                    selected = state.sortMode == PlaylistSortMode.DATE_ASC,
+                    onClick = { playlistsViewModel.setSortMode(PlaylistSortMode.DATE_ASC) },
+                )
+                TvSortPill(
+                    label = stringResource(R.string.tv_library_sort_az),
+                    selected = state.sortMode == PlaylistSortMode.NAME,
+                    onClick = { playlistsViewModel.setSortMode(PlaylistSortMode.NAME) },
+                )
+                TvSortPill(
+                    label = stringResource(R.string.tv_library_sort_tracks),
+                    selected = state.sortMode == PlaylistSortMode.TRACK_COUNT,
+                    onClick = { playlistsViewModel.setSortMode(PlaylistSortMode.TRACK_COUNT) },
+                )
+            }
+        }
         if (state.playlists.isEmpty()) {
             Text(
                 text = stringResource(R.string.tv_library_empty),
@@ -132,7 +167,7 @@ fun TvLibraryTab(
                             },
                             icon = Icons.Rounded.LibraryMusic,
                             expanded = expanded,
-                            modifier = if (index == 0) Modifier.focusRequester(entry) else Modifier,
+                            modifier = Modifier,
                             onClick = {
                                 if (expanded) {
                                     expandedId = null
@@ -318,5 +353,51 @@ private fun TvLibraryTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** ArchiveTune ChipsRow grammar: pill that carries focus, selected and idle states. */
+@Composable
+private fun TvSortPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    val pillColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.secondaryContainer
+            selected -> MaterialTheme.colorScheme.surfaceContainerHighest
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvSortPillColor",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.onSecondaryContainer
+            selected -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvSortPillLabel",
+    )
+    Box(
+        modifier = modifier
+            .tvLift(focused = isFocused, shape = RoundedCornerShape(20.dp), focusedScale = 1.05f, elevation = 5.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(pillColor)
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = labelColor,
+            maxLines = 1,
+        )
     }
 }

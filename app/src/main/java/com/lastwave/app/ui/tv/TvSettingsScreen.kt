@@ -38,10 +38,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -119,6 +123,15 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
     val ui by settingsViewModel.uiState.collectAsStateWithLifecycle()
     var loginTarget by remember { mutableStateOf<TvLoginTarget?>(null) }
 
+    // Tab-entry focus: the first actionable account row grabs focus so the
+    // remote is never dead on this pane (one entry requester is attached to
+    // whichever of the YouTube sign-in / sign-out rows is currently present).
+    val entry = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { entry.requestFocus() }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier
@@ -140,6 +153,7 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
             item(key = "account-youtube") {
                 TvAccountRow(
                     title = stringResource(R.string.tv_account_youtube),
+                    modifier = if (ui.ytAccountName == null) Modifier.focusRequester(entry) else Modifier,
                     status = ui.ytAccountName?.let {
                         stringResource(R.string.tv_account_signed_in_as, it)
                     } ?: stringResource(R.string.tv_account_not_signed_in),
@@ -150,7 +164,11 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
             }
             if (ui.ytAccountName != null) {
                 item(key = "account-youtube-out") {
-                    TvSignOutRow(label = stringResource(R.string.tv_account_youtube), onClick = settingsViewModel::signOutYouTube)
+                    TvSignOutRow(
+                        label = stringResource(R.string.tv_account_youtube),
+                        onClick = settingsViewModel::signOutYouTube,
+                        modifier = if (ui.ytAccountName != null) Modifier.focusRequester(entry) else Modifier,
+                    )
                 }
             }
             item(key = "account-spotify") {
@@ -230,11 +248,12 @@ private fun TvAccountRow(
     connected: Boolean,
     icon: ImageVector,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .tvLift(focused = isFocused && !connected, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
             .clip(RoundedCornerShape(16.dp))
@@ -295,11 +314,15 @@ private fun TvAccountRow(
 }
 
 @Composable
-private fun TvSignOutRow(label: String, onClick: () -> Unit) {
+private fun TvSignOutRow(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .tvLift(focused = isFocused, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
             .clip(RoundedCornerShape(16.dp))

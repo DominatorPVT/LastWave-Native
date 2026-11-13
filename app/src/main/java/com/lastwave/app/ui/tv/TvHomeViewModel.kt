@@ -97,6 +97,10 @@ class TvHomeViewModel @Inject constructor(
     var recentTracks by mutableStateOf<List<SongPlayStatsEntity>>(emptyList())
         private set
 
+    /** True once the first history read finishes — gates the empty-state text so it never flashes. */
+    var historyLoaded by mutableStateOf(false)
+        private set
+
     private val searchQueryInternal = MutableStateFlow("")
     val searchQuery: MutableStateFlow<String> = searchQueryInternal
 
@@ -141,6 +145,7 @@ class TvHomeViewModel @Inject constructor(
             // Recently played keeps its own identity: drop entries already shown as top tracks.
             recentTracks = recent.filterNot { row -> top.any { it.trackKey == row.trackKey } }
                 .take(TOP_ROW_LIMIT)
+        historyLoaded = true
         }
         viewModelScope.launch {
             // Personalized YT Music home feed first; if it comes back empty
