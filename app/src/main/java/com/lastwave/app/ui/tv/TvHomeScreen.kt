@@ -532,8 +532,9 @@ private fun TvArtworkBackdrop(
     // Real-time blur is the single most expensive thing on low-end TV GPUs.
     // Low-RAM devices skip it and keep the tinted blobs + gradient — still
     // colourful, zero blur cost. Everywhere else the radius is trimmed.
-    val canAffordBlur = remember(LocalContext.current) {
-        val am = LocalContext.current.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+    val backdropContext = LocalContext.current
+    val canAffordBlur = remember(backdropContext) {
+        val am = backdropContext.getSystemService(android.content.Context.ACTIVITY_SERVICE)
             as? android.app.ActivityManager
         am?.isLowRamDevice != true
     }
