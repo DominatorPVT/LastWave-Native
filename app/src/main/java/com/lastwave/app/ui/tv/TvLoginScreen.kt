@@ -115,6 +115,10 @@ fun TvLoginScreen(
     }
     val ytState by ytViewModel.uiState.collectAsStateWithLifecycle()
 
+    // Virtual pointer preference (setup wizard + Settings toggle). Off = the
+    // WebView owns the remote natively; On = the pointer dot drives clicks.
+    val pointerEnabled by TvSettings.virtualMouse.collectAsStateWithLifecycle()
+
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(true) }
     var pageError by remember { mutableStateOf(false) }
@@ -156,6 +160,25 @@ fun TvLoginScreen(
         okDownAt = 0L
         val wv = webView
         if (wv != null && wv.canGoBack()) wv.goBack() else onCancel()
+    }
+
+    // Edge auto-scroll: park the pointer against the bottom edge and the page
+    // scrolls down on its own; the top edge scrolls up. Fixes the
+    // user-reported gap where riding the edge did nothing without an OK-hold
+    // drag. One loop covers both flows — YouTube and Spotify share this
+    // screen. Paused while a drag is in progress (the drag scrolls instead).
+    LaunchedEffect(cursorX, cursorY, pointerDown, dragging, webView) {
+        val wv = webView ?: return@LaunchedEffect
+        if (!pointerEnabled || cursorX.isNaN() || pointerDown || dragging) return@LaunchedEffect
+        val edgeZone = with(density) { 32.dp.toPx() }
+        val step = (wv.height / 4).coerceAtLeast(120)
+        while (isActive) {
+            val atBottom = cursorY >= wv.height - edgeZone
+            val atTop = cursorY <= edgeZone
+            if (!atBottom && !atTop) return@LaunchedEffect
+            if (atBottom) wv.smoothScrollBy(0, step) else wv.smoothScrollBy(0, -step)
+            delay(220)
+        }
     }
 
     /** Reads the `sp_dc` cookie on a post-auth page and stores it (phone logic). */
@@ -500,6 +523,10 @@ fun TvLoginScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .onPreviewKeyEvent { event ->
+                            // Pointer off: the WebView handles the remote
+                            // natively (arrows traverse links, OK clicks,
+                            // Page keys scroll) — no pointer logic runs.
+                            if (!pointerEnabled) return@onPreviewKeyEvent false
                             val ke = event.nativeKeyEvent
                             if (ke.action != android.view.KeyEvent.ACTION_DOWN) {
                                 // Key release: OK/ENTER lifts the touch — a
@@ -656,7 +683,7 @@ fun TvLoginScreen(
                         )
                     }
                 }
-                if (!cursorX.isNaN() && !cursorY.isNaN()) {
+                if (pointerEnabled && !cursorX.isNaN() && !cursorY.isNaN()) {
                     // The pointer dot, drawn above the page.
                     Box(
                         modifier = Modifier

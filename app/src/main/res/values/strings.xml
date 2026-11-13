@@ -1526,4 +1526,23 @@
     <string name="tv_library_sort_oldest">Oldest</string>
     <string name="tv_library_sort_az">A–Z</string>
     <string name="tv_library_sort_tracks">Tracks</string>
+    <string name="tv_settings_pointer">Virtual mouse pointer</string>
+    <string name="tv_settings_pointer_desc">Pointer for clicking inside sign-in pages</string>
+    <string name="tv_setup_welcome_title">Welcome to LastWave</string>
+    <string name="tv_setup_welcome_body">Your music, made for the big screen. Set it up once and everything just works.</string>
+    <string name="tv_setup_continue">Continue</string>
+    <string name="tv_setup_skip">Skip setup</string>
+    <string name="tv_setup_mouse_title">Virtual mouse pointer?</string>
+    <string name="tv_setup_mouse_body">A pointer helps you click inside the YouTube and Spotify sign-in pages. Park it on the bottom or top edge to scroll. You can change this anytime in Settings.</string>
+    <string name="tv_setup_on">On</string>
+    <string name="tv_setup_off">Off</string>
+    <string name="tv_setup_signin_title">Sign in</string>
+    <string name="tv_setup_signin_body">Connect YouTube Music or Spotify to personalise Home, Library and search. Skipping is fine — sign in later from Settings.</string>
+    <string name="tv_setup_done_title">You\'re all set</string>
+    <string name="tv_setup_done_body">Find music in Home and Search, your playlists in Library. Everything can be changed later in Settings.</string>
+    <string name="tv_setup_start">Start listening</string>
+    <string name="tv_artist_top_songs">Top songs</string>
+    <string name="tv_artist_play">Play</string>
+    <string name="tv_artist_loading">Finding songs…</string>
+    <string name="tv_artist_empty">No songs found for this artist</string>
 </resources>

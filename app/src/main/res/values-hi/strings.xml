@@ -1162,4 +1162,23 @@
     <string name="tv_library_sort_oldest">पुराने</string>
     <string name="tv_library_sort_az">A–Z</string>
     <string name="tv_library_sort_tracks">ट्रैक्स</string>
+    <string name="tv_settings_pointer">वर्चुअल माउस पॉइंटर</string>
+    <string name="tv_settings_pointer_desc">साइन-इन पेज पर क्लिक करने के लिए पॉइंटर</string>
+    <string name="tv_setup_welcome_title">LastWave में आपका स्वागत है</string>
+    <string name="tv_setup_welcome_body">आपका म्यूज़िक, बड़ी स्क्रीन के लिए बना। एक बार सेट करें, बस।</string>
+    <string name="tv_setup_continue">आगे बढ़ें</string>
+    <string name="tv_setup_skip">सेटअप छोड़ें</string>
+    <string name="tv_setup_mouse_title">वर्चुअल माउस पॉइंटर?</string>
+    <string name="tv_setup_mouse_body">YouTube और Spotify साइन-इन पेज पर क्लिक करने के लिए पॉइंटर मदद करता है। नीचे या ऊपर किनारे पर रखें तो पेज खुद स्क्रॉल होगा। इसे Settings में कभी भी बदल सकते हैं।</string>
+    <string name="tv_setup_on">चालू</string>
+    <string name="tv_setup_off">बंद</string>
+    <string name="tv_setup_signin_title">साइन इन</string>
+    <string name="tv_setup_signin_body">Home, Library और Search को अपनाने के लिए YouTube Music या Spotify जोड़ें। छोड़ना भी ठीक है — बाद में Settings से साइन इन करें।</string>
+    <string name="tv_setup_done_title">सब तैयार है</string>
+    <string name="tv_setup_done_body">Home और Search में गाने, Library में प्लेलिस्ट। सब कुछ बाद में Settings में बदला जा सकता है।</string>
+    <string name="tv_setup_start">सुनना शुरू करें</string>
+    <string name="tv_artist_top_songs">टॉप गाने</string>
+    <string name="tv_artist_play">चलाएँ</string>
+    <string name="tv_artist_loading">गाने खोज रहे हैं…</string>
+    <string name="tv_artist_empty">इस कलाकार के गाने नहीं मिले</string>
 </resources>

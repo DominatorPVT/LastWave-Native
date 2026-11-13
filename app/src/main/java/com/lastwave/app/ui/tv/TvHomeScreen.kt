@@ -228,6 +228,9 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
     val playFocus = remember { FocusRequester() }
     val railHomeFocus = remember { FocusRequester() }
 
+    // First-run setup gate (persisted in TvSettings).
+    val setupCompleted by TvSettings.setupCompleted.collectAsStateWithLifecycle()
+
     // Ambient accent for the pane-wide backdrop — same Palette extraction the
     // hero glow uses (Coil caches the decode, so this is a cache hit).
     val rootAmbientHex = remember { mutableStateOf<String?>(null) }
@@ -285,6 +288,10 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
             },
         color = MaterialTheme.colorScheme.background,
     ) {
+        if (!setupCompleted) {
+            // First-run setup: pointer question + both sign-ins (skippable).
+            TvSetupScreen(onComplete = { })
+        } else {
         Row(modifier = Modifier.fillMaxSize()) {
             TvNavRail(
                 selectedTab = tab,
@@ -340,6 +347,10 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         TvTab.SETTINGS -> TvSettingsTab()
                     }
                 }
+                // Spotify-TV artist profile: full-pane overlay above the tabs.
+                if (viewModel.artistName != null) {
+                    TvArtistScreen(viewModel = viewModel)
+                }
             }
             // Spotify-TV pattern: a persistent mini now-playing strip under
             // every browse pane (Home keeps its full hero instead). It is
@@ -354,6 +365,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                 TvMiniNowPlayingBar(viewModel = viewModel)
             }
             }
+        }
         }
     }
 }
@@ -878,12 +890,11 @@ private fun TvNowPlayingHero(
                         }
                     }
                 } else {
-                    Text(
-                        text = track.artist,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    // Spotify-TV affordance: the artist name is itself a
+                    // focusable link into the artist profile.
+                    TvHeroArtistLink(
+                        title = track.artist,
+                        onClick = { viewModel.openArtist(track.artist) },
                     )
                     Text(
                         text = track.title,
@@ -1585,6 +1596,23 @@ private fun TvSearchTab(viewModel: TvHomeViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                item(key = "artist-chips") {
+                    // Spotify-TV grammar: distinct artists from the results
+                    // surface as chips on top; OK opens the artist profile.
+                    val artists = remember(viewModel.searchResults) {
+                        viewModel.searchResults.map { it.artist }
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                            .take(6)
+                    }
+                    if (artists.size >= 2) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            itemsIndexed(artists, key = { index, artist -> "$index-$artist" }) { _, artist ->
+                                TvArtistChip(label = artist, onClick = { viewModel.openArtist(artist) })
+                            }
+                        }
+                    }
+                }
                 itemsIndexed(viewModel.searchResults, key = { index, track -> "$index-${track.videoId}" }) { _, track ->
                     TvSearchResultRow(track = track, onPlay = { viewModel.playTrack(track) })
                 }
@@ -1683,7 +1711,7 @@ private fun TvMiniNowPlayingBar(viewModel: TvHomeViewModel) {
                 modifier = Modifier.weight(1f),
             )
             Icon(
-                imageVector = if (chrome.isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause,
+                imageVector = if (chrome.isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.PlayArrow,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
@@ -1780,5 +1808,176 @@ private fun TvSkeletonShelf() {
                 )
             }
         }
+    }
+}
+
+/**
+ * Spotify-TV artist profile: a hero band tinted by the first song's art, the
+ * artist name over it, a Play button (radio follows), and top songs as rows.
+ * Opened from the hero artist link or the search artist chips; BACK closes.
+ */
+@Composable
+private fun TvArtistScreen(viewModel: TvHomeViewModel) {
+    val name = viewModel.artistName ?: return
+    BackHandler { viewModel.closeArtist() }
+    val playFocus = remember { FocusRequester() }
+    LaunchedEffect(name) {
+        withFrameNanos { }
+        runCatching { playFocus.requestFocus() }
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 40.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        item(key = "artist-hero") {
+            val heroUrl = viewModel.artistSongs.firstOrNull()?.artworkUrl
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(190.dp)
+                    .clip(ArtworkShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                if (heroUrl != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(heroUrl)
+                            .size(900)
+                            .crossfade(220)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = 1.08f
+                                scaleY = 1.08f
+                            },
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                1f to Color.Black.copy(alpha = 0.72f),
+                            ),
+                        ),
+                )
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(20.dp),
+                )
+            }
+        }
+        item(key = "artist-play") {
+            TvTransportButton(
+                icon = Icons.Rounded.PlayArrow,
+                contentDescription = stringResource(R.string.tv_artist_play),
+                containerColor = MaterialTheme.colorScheme.primary,
+                iconTint = MaterialTheme.colorScheme.onPrimary,
+                iconSize = 34.dp,
+                buttonSize = 64.dp,
+                modifier = Modifier.focusRequester(playFocus),
+                onClick = {
+                    viewModel.artistSongs.firstOrNull()?.let { viewModel.playTrack(it) }
+                },
+            )
+        }
+        when {
+            viewModel.artistLoading -> item(key = "artist-loading") {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.tv_artist_loading),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            viewModel.artistSongs.isEmpty() -> item(key = "artist-empty") {
+                Text(
+                    text = stringResource(R.string.tv_artist_empty),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                item(key = "artist-top") { TvSectionTitle(stringResource(R.string.tv_artist_top_songs)) }
+                itemsIndexed(viewModel.artistSongs, key = { index, track -> "$index-${track.videoId}" }) { _, track ->
+                    TvSearchResultRow(track = track, onPlay = { viewModel.playTrack(track) })
+                }
+            }
+        }
+    }
+}
+
+/** Spotify-TV affordance: the hero's artist name is itself a link. */
+@Composable
+private fun TvHeroArtistLink(title: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .tvLift(focused = isFocused, shape = RoundedCornerShape(8.dp), focusedScale = 1.03f, elevation = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isFocused) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent)
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/** Artist chip above search results — the pill grammar from Library sort. */
+@Composable
+private fun TvArtistChip(label: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    var isFocused by remember { mutableStateOf(false) }
+    val chipColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> MaterialTheme.colorScheme.secondaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvArtistChipColor",
+    )
+    Box(
+        modifier = Modifier
+            .tvLift(focused = isFocused, shape = RoundedCornerShape(20.dp), focusedScale = 1.05f, elevation = 5.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(chipColor)
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (isFocused) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+        )
     }
 }

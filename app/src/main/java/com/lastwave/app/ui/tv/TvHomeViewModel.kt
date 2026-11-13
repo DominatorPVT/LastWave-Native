@@ -124,6 +124,32 @@ class TvHomeViewModel @Inject constructor(
     var canvas by mutableStateOf<com.lastwave.app.data.canvas.CanvasArtwork?>(null)
         private set
 
+    /** Spotify-TV style artist profile currently open, if any. */
+    var artistName by mutableStateOf<String?>(null)
+        private set
+    var artistSongs by mutableStateOf<List<YouTubeMusicTrack>>(emptyList())
+        private set
+    var artistLoading by mutableStateOf(false)
+        private set
+
+    /** Opens the artist page: top songs come from the shared YT Music search. */
+    fun openArtist(name: String) {
+        if (name.isBlank() || artistName == name) return
+        artistName = name
+        artistLoading = true
+        artistSongs = emptyList()
+        viewModelScope.launch {
+            artistSongs = runCatching { innerTube.searchSongs(name, limit = 20) }.getOrDefault(emptyList())
+            artistLoading = false
+        }
+    }
+
+    fun closeArtist() {
+        artistName = null
+        artistSongs = emptyList()
+        artistLoading = false
+    }
+
     /** Kept as its own low-frequency flow so the 60 ms progress ticker never reaches the UI. */
     val shuffleEnabled = musicPlayer.state
         .map { it.shuffleEnabled }

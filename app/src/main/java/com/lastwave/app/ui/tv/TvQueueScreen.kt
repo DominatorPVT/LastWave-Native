@@ -60,7 +60,8 @@ fun TvQueueTab(
     viewModel: TvHomeViewModel,
     railHomeFocus: FocusRequester,
 ) {
-    val snap by viewModel.musicPlayer.state.collectAsStateWithLifecycle()
+    // Progress-free snapshot: the ~60ms position ticker must not recompose the queue.
+    val snap by viewModel.musicPlayer.stateWithoutProgress.collectAsStateWithLifecycle()
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val queue = snap.queue
     val currentId = chrome.current?.videoId

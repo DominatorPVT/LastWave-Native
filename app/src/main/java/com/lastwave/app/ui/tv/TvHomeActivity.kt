@@ -28,6 +28,8 @@ class TvHomeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Volume keys must control music, matching the phone shell.
         volumeControlStream = AudioManager.STREAM_MUSIC
+        // TV-side preferences (setup wizard + virtual pointer) load first.
+        TvSettings.init(this)
         setContent {
             val themeViewModel: ThemeViewModel = hiltViewModel()
             val themeState by themeViewModel.uiState.collectAsStateWithLifecycle()
