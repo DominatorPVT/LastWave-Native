@@ -19,6 +19,10 @@ import com.lastwave.app.util.PlaylistExportFormat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.catch
 import com.lastwave.app.data.playlist.SpotifyUserPlaylist
 import com.lastwave.app.data.playlist.SpotifyPlaylistImporter
 import com.lastwave.app.data.spotify.SpotifyPreferences
@@ -97,6 +102,22 @@ class PlaylistViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(PlaylistUiState())
     val uiState: StateFlow<PlaylistUiState> = _uiState.asStateFlow()
+
+    /** Songs saved for offline, for Library's Downloads card. */
+    val downloadedCount: StateFlow<Int> = trackDownloadManager.downloadedTrackDao.getAll()
+        .map { it.size }
+        .catch { emit(0) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    fun openDownloads() {
+        routeNavigator.navigateTo(com.lastwave.app.ui.navigation.Screen.Downloads.route)
+    }
+
+    private val trackMoveVersions = mutableMapOf<Long, Long>()
+    private val pendingTrackMoves = mutableMapOf<Long, Int>()
+
+    private fun keepDraggedOrder(id: Long, readVersions: Map<Long, Long>): Boolean =
+        (pendingTrackMoves[id] ?: 0) > 0 || trackMoveVersions[id] != readVersions[id]
 
     val syncedPlaylistIds: StateFlow<Set<Long>?> = ytMusicPreferences.syncedPlaylistIds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -198,13 +219,31 @@ class PlaylistViewModel @Inject constructor(
     fun loadSpotifyPlaylists() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSpotifyLoading = true) }
-            val raw = runCatching { spotifyPlaylistImporter.fetchUserPlaylists() }.getOrDefault(emptyList())
+            val (raw, likedCount) = coroutineScope {
+                val playlistsDeferred = async {
+                    try {
+                        spotifyPlaylistImporter.fetchUserPlaylists()
+                    } catch (e: Exception) {
+                        currentCoroutineContext().ensureActive()
+                        emptyList()
+                    }
+                }
+                val likedCountDeferred = async {
+                    try {
+                        spotifyPlaylistImporter.fetchLikedSongsCount()
+                    } catch (e: Exception) {
+                        currentCoroutineContext().ensureActive()
+                        null
+                    }
+                }
+                playlistsDeferred.await() to likedCountDeferred.await()
+            }
             val likedSummary = SpotifyUserPlaylist(
                 id = "liked",
                 name = "Liked Songs",
                 description = "Your Spotify likes",
                 artworkUrl = null,
-                trackCount = 0,
+                trackCount = likedCount,
             )
             val fullList = listOf(likedSummary) + raw
             _uiState.update { it.copy(spotifyPlaylists = fullList, isSpotifyLoading = false) }
@@ -217,6 +256,7 @@ class PlaylistViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
+            val readVersions = trackMoveVersions.toMap()
             val local = try {
                 // The built-in "Local songs" playlist is always present.
                 playlistRepository.getAll().let { all ->
@@ -235,15 +275,20 @@ class PlaylistViewModel @Inject constructor(
             val all = mergeAndDeduplicatePlaylists(local, remote, _uiState.value.sortMode)
             val newest = justGeneratedId ?: all.maxByOrNull { it.createdAtMillis }?.id
             _uiState.update { current ->
+                val currentById = current.playlists.associateBy { it.id }
+                val refreshed = all.map { playlist ->
+                    if (keepDraggedOrder(playlist.id, readVersions)) currentById[playlist.id] ?: playlist else playlist
+                }
                 val currentDetailId = current.detailPlaylist?.id
                 val updatedDetail = if (currentDetailId != null && currentDetailId >= 0L) {
-                    all.firstOrNull { pl -> pl.id == currentDetailId }
+                    if (keepDraggedOrder(currentDetailId, readVersions)) current.detailPlaylist
+                    else refreshed.firstOrNull { pl -> pl.id == currentDetailId }
                 } else {
                     current.detailPlaylist
                 }
                 current.copy(
                     isLoading = false,
-                    playlists = all,
+                    playlists = refreshed,
                     detailPlaylist = updatedDetail ?: current.detailPlaylist,
                     newestId = newest,
                     expandedIds = if (justGeneratedId != null) setOf(justGeneratedId) else current.expandedIds,
@@ -276,6 +321,7 @@ class PlaylistViewModel @Inject constructor(
     fun loadDetail(playlistId: Long) {
         viewModelScope.launch {
             _uiState.update { it.copy(isDetailLoading = true) }
+            val readVersions = trackMoveVersions.toMap()
             val pl = if (playlistId < 0L) {
                 ytMusicLibraryManager.loadDetail(playlistId) { updated ->
                     _uiState.update { current ->
@@ -303,6 +349,7 @@ class PlaylistViewModel @Inject constructor(
                 playlistRepository.getById(playlistId)
             }
             _uiState.update {
+                if (keepDraggedOrder(playlistId, readVersions)) return@update it.copy(isDetailLoading = false)
                 it.copy(
                     isDetailLoading = false,
                     detailPlaylist = pl ?: it.detailPlaylist,
@@ -513,6 +560,8 @@ class PlaylistViewModel @Inject constructor(
         val reordered = current.tracks.toMutableList().apply {
             add(toIndex, removeAt(fromIndex))
         }
+        trackMoveVersions[playlistId] = (trackMoveVersions[playlistId] ?: 0L) + 1L
+        pendingTrackMoves[playlistId] = (pendingTrackMoves[playlistId] ?: 0) + 1
         _uiState.update { state ->
             state.copy(
                 detailPlaylist = current.copy(tracks = reordered),
@@ -522,23 +571,31 @@ class PlaylistViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            runCatching { playlistRepository.moveTrack(playlistId, fromIndex, toIndex) }
-                .onSuccess { persisted ->
-                    if (persisted != null) {
-                        _uiState.update { state ->
-                            state.copy(
-                                detailPlaylist = if (state.detailPlaylist?.id == playlistId) persisted else state.detailPlaylist,
-                                playlists = state.playlists.map { playlist ->
-                                    if (playlist.id == playlistId) persisted else playlist
-                                },
-                            )
-                        }
+            withContext(NonCancellable) {
+                var failed = false
+                try {
+                    val persisted = playlistRepository.moveTrack(playlistId, fromIndex, toIndex) ?: return@withContext
+                    _uiState.update { state ->
+                        state.copy(
+                            // Earlier crossed-row writes must not roll back a newer drag position.
+                            detailPlaylist = if (state.detailPlaylist?.id == playlistId && state.detailPlaylist.tracks == reordered) {
+                                persisted
+                            } else state.detailPlaylist,
+                            playlists = state.playlists.map { playlist ->
+                                if (playlist.id == playlistId && playlist.tracks == reordered) persisted else playlist
+                            },
+                        )
                     }
-                }
-                .onFailure {
+                } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    failed = true
                     _uiState.update { it.copy(toastMessage = "Couldn't save new order") }
-                    loadDetail(playlistId)
+                } finally {
+                    val pending = (pendingTrackMoves[playlistId] ?: 1) - 1
+                    if (pending == 0) pendingTrackMoves.remove(playlistId) else pendingTrackMoves[playlistId] = pending
+                    if (failed && pending == 0) loadDetail(playlistId)
                 }
+            }
         }
     }
 

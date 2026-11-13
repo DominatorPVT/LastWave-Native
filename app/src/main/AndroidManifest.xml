@@ -127,13 +127,14 @@
                 <data android:scheme="lastwave" android:host="sync" />
             </intent-filter>
 
-            <!-- LastWave Jam web invite deep links (https://jam.clashprojects.qd.je/?code=...) -->
+            <!-- LastWave Jam web invite deep links (https://jam.clashgram.org/?code=...) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="http" />
                 <data android:scheme="https" />
+                <data android:host="jam.clashgram.org" />
                 <data android:host="jam.clashprojects.qd.je" />
             </intent-filter>
 
@@ -160,6 +161,20 @@
                 <data android:scheme="https" />
                 <data android:host="open.spotify.com" />
                 <data android:host="spotify.link" />
+            </intent-filter>
+
+            <!-- Local audio files ("Open With" from Files / file managers) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-ogg" />
+                <data android:mimeType="application/flac" />
+                <data android:mimeType="application/x-flac" />
             </intent-filter>
 
             <!-- Share target for music links & song titles -->
@@ -242,7 +257,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-
         <!-- Android TV / Google TV / Fire TV launcher (leanback). The phone
              activity stays leanback-free, so TV home screens list only this. -->
         <activity
@@ -259,6 +273,7 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
 
 
         <!-- Native background music player service -->

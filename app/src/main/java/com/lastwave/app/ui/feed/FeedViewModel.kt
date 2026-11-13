@@ -323,12 +323,15 @@ class FeedViewModel @Inject constructor(
 
     fun selectChip(chip: HomeChip?) {
         val currentSelected = _uiState.value.selectedChip
+        chipJob?.cancel()
+        loadMoreJob?.cancel()
+        val currentGen = ++requestGeneration
         if (chip == null || chip == currentSelected) {
-            chipJob?.cancel()
             _uiState.update {
                 it.copy(
                     selectedChip = null,
                     isChipLoading = false,
+                    isLoadingMore = false,
                     chipShelves = emptyList(),
                     chipContinuationToken = null,
                     chipBackgroundUrl = null,
@@ -337,13 +340,11 @@ class FeedViewModel @Inject constructor(
             return
         }
 
-        chipJob?.cancel()
-        loadMoreJob?.cancel()
-        val currentGen = ++requestGeneration
         _uiState.update {
             it.copy(
                 selectedChip = chip,
                 isChipLoading = true,
+                isLoadingMore = false,
                 chipShelves = emptyList(),
                 chipContinuationToken = null,
                 chipBackgroundUrl = null,
@@ -722,6 +723,10 @@ class FeedViewModel @Inject constructor(
             ),
             sourceLabel = "Quick Picks",
         )
+    }
+
+    fun warmQuickPicks(tracks: List<YouTubeMusicTrack>) {
+        musicPlayer.warmLikelyPlays(tracks.map { it.toPlayableTrack() })
     }
 
     private fun YouTubeMusicTrack.toPlayableTrack(): PlayableTrack = PlayableTrack(

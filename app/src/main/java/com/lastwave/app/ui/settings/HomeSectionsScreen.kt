@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.People
@@ -92,6 +93,7 @@ import androidx.lifecycle.viewModelScope
 import com.lastwave.app.R
 import com.lastwave.app.data.local.SettingsPreferences
 import com.lastwave.app.ui.common.ExpressiveHeader
+import com.lastwave.app.ui.common.GlassHeaderLayout
 import com.lastwave.app.ui.common.adaptiveContentWidth
 import com.lastwave.app.ui.common.safeDrawingBottomPadding
 import com.lastwave.app.ui.common.safeHorizontalContentPadding
@@ -178,6 +180,7 @@ val ALL_DEFAULT_UNIVERSAL_SECTIONS: List<UniversalSectionItem> = listOf(
     UniversalSectionItem("yt:Live performances", rawTitle = "Live performances", rawSubtitle = "YouTube Music Section", isYouTube = true, icon = Icons.Filled.Headphones),
     UniversalSectionItem("friends_activity", titleRes = R.string.home_section_friends_title, subtitleRes = R.string.home_section_friends_sub, isYouTube = false, icon = Icons.Filled.Group),
     UniversalSectionItem("podcast_shelf", rawTitle = "Podcasts", rawSubtitle = "Popular podcast shows", isYouTube = false, icon = Icons.Filled.Mic),
+    UniversalSectionItem("moods_and_genres", titleRes = R.string.moods_title, rawSubtitle = "Browse by mood and genre", isYouTube = false, icon = Icons.Filled.Category),
     // Extra default YTM sections
     UniversalSectionItem("yt:Similar to", rawTitle = "Similar to", rawSubtitle = "YouTube Music Section", isYouTube = true, icon = Icons.Filled.Subscriptions),
     UniversalSectionItem("yt:Music video for you", rawTitle = "Music video for you", rawSubtitle = "YouTube Music Section", isYouTube = true, icon = Icons.Filled.SmartDisplay),
@@ -340,13 +343,15 @@ fun HomeSectionsScreen(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Column(
+        GlassHeaderLayout(
             modifier = Modifier
                 .fillMaxSize()
                 .adaptiveContentWidth(maxWidth = 860.dp)
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
-        ) {
+            header = { headerModifier, headerBackdrop ->
             ExpressiveHeader(
+                modifier = headerModifier,
+                backdrop = headerBackdrop,
                 title = stringResource(R.string.settings_home_sections),
                 subtitle = if (uiState.isLoaded) stringResource(
                     R.string.home_sections_visible,
@@ -371,6 +376,9 @@ fun HomeSectionsScreen(
                     }
                 },
             )
+            },
+        ) { headerInset ->
+        Column(Modifier.fillMaxSize().padding(top = headerInset)) {
 
             if (!uiState.isLoaded) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -578,6 +586,7 @@ fun HomeSectionsScreen(
                     }
                 }
             }
+        }
         }
     }
 }

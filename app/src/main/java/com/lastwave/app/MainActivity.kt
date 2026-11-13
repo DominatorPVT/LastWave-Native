@@ -9,6 +9,7 @@ import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -17,6 +18,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lastwave.app.ui.common.ArtworkViewModel
+import com.lastwave.app.ui.common.LocalArtworkViewModel
+import com.lastwave.app.ui.common.LocalArtworkCellular
 import com.lastwave.app.util.AppLocaleManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -185,14 +189,18 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
                 if (com.lastwave.app.util.TvDetect.isTvMode(this)) {
                     com.lastwave.app.ui.tv.TvHomeRoot()
                 } else {
+
                 val currentConfig = androidx.compose.ui.platform.LocalViewConfiguration.current
-                androidx.compose.runtime.CompositionLocalProvider(
-                    androidx.compose.ui.platform.LocalViewConfiguration provides object : androidx.compose.ui.platform.ViewConfiguration by currentConfig {
+                val customViewConfig = androidx.compose.runtime.remember(currentConfig) {
+                    object : androidx.compose.ui.platform.ViewConfiguration by currentConfig {
                         override val touchSlop: Float
                             get() = currentConfig.touchSlop * 1.5f
                         override val minimumTouchTargetSize: androidx.compose.ui.unit.DpSize
                             get() = androidx.compose.ui.unit.DpSize(48.dp, 48.dp)
                     }
+                }
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalViewConfiguration provides customViewConfig
                 ) {
                     val navController = rememberNavController()
                     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -204,16 +212,27 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
                         currentRoute == Screen.SpotifyTokenImport.route ||
                         currentRoute == Screen.YouTubeLogin.route
 
-                    PlayerHost(
-                        hasBottomNavigation = hasBottomNavigation,
-                        hideMiniPlayer = isJamScreen,
-                        webContentScreen = isWebLoginScreen,
+                    val artworkVm: ArtworkViewModel = hiltViewModel()
+                    val artworkCellular by artworkVm.isCellular.collectAsStateWithLifecycle()
+
+                    CompositionLocalProvider(
+                        LocalArtworkViewModel provides artworkVm,
+                        LocalArtworkCellular provides artworkCellular,
                     ) {
-                        LastWaveNavHost(navController)
+                        PlayerHost(
+                            hasBottomNavigation = hasBottomNavigation,
+                            material3NavigationEnabled = themeState.md3NavBar,
+                            hideMiniPlayer = isJamScreen,
+                            webContentScreen = isWebLoginScreen,
+                        ) {
+                            LastWaveNavHost(navController)
+                        }
+                        // Desktop-style in-app update dialog, shared by every screen.
+                        com.lastwave.app.ui.update.AppUpdateDialogHost()
                     }
                 }
-                }
-            }
+                            }
+}
         }
         StartupTrail.mark("activity.content.set")
         // First drawn frame: if the process dies between content.set and
@@ -307,13 +326,17 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
             return
         }
         val uri = intent?.data
+        val scheme = uri?.scheme.orEmpty().lowercase()
         val host = uri?.host.orEmpty().lowercase()
         val isSupportedMusicLink = intent?.action == Intent.ACTION_VIEW &&
-            (uri?.scheme == "http" || uri?.scheme == "https") &&
+            (scheme == "http" || scheme == "https") &&
             (host == "youtube.com" || host == "www.youtube.com" ||
                 host == "m.youtube.com" || host == "music.youtube.com" || host == "youtu.be" ||
                 host == "open.spotify.com" || host == "spotify.link")
-        val hasPlaybackTarget = isSupportedMusicLink || intent?.action == Intent.ACTION_SEND
+        val isLocalAudioIntent = intent?.action == Intent.ACTION_VIEW &&
+            (scheme == "content" || scheme == "file") &&
+            uri != null
+        val hasPlaybackTarget = isSupportedMusicLink || isLocalAudioIntent || intent?.action == Intent.ACTION_SEND
         if (hasPlaybackTarget) {
             runCatching { linkPlaybackResolver.get().handleIntent(intent) }
         }
@@ -331,7 +354,7 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
         }
         val uri = intent.data
         val isJamDeepLink = (uri?.scheme == "lastwave" && (uri.host == "jam" || uri.host == "sync")) ||
-            ((uri?.scheme == "https" || uri?.scheme == "http") && uri?.host == "jam.clashprojects.qd.je")
+            ((uri?.scheme == "https" || uri?.scheme == "http") && (uri?.host == "jam.clashgram.org" || uri?.host == "jam.clashprojects.qd.je"))
         if (isJamDeepLink) {
             val code = uri?.getQueryParameter("code")
             runCatching { appRouteNavigator.get().navigateTo(Screen.Jam.createRoute(code)) }

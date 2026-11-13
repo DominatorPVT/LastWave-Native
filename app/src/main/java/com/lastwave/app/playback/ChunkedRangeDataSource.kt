@@ -136,10 +136,8 @@ class ChunkedRangeDataSource(
                 return openUpstream(spec)
             } catch (error: HttpDataSource.InvalidResponseCodeException) {
                 val refreshable = error.responseCode == 403 || error.responseCode == 410
-                if (!refreshable || refreshesThisOpen >= MAX_REFRESHES_PER_OPEN) throw error
-                // A member val's smart cast doesn't survive capture inside a
-                // lambda; pin it to a local before runCatching uses it.
-                val activeRefresher = refresher ?: throw error
+                val activeRefresher = refresher
+                if (!refreshable || activeRefresher == null || refreshesThisOpen >= MAX_REFRESHES_PER_OPEN) throw error
                 refreshesThisOpen++
                 val replacement = runCatching { activeRefresher.refresh(spec.uri) }.getOrNull() ?: throw error
                 spec = spec.buildUpon()

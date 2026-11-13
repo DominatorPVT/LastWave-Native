@@ -100,6 +100,21 @@ enum class RecommendationSource(val id: String, val titleRes: Int, val subtitleR
     }
 }
 
+/** How a track reaches the selected streaming quality. Downgrades are always seamless. */
+enum class HiResStart(val id: String, val title: String, val subtitle: String) {
+    FAST("fast", "Fast start", "Start on Opus, then switch to your quality when ready"),
+    DIRECT("direct", "Best quality first", "Wait up to 8 s for your quality, then Opus"),
+    NEVER("never", "Never upgrade", "Keep the stream a song starts with");
+
+    companion object {
+        fun fromId(id: String?, legacyAutoUpgrade: Boolean?): HiResStart =
+            entries.firstOrNull { it.id == id } ?: if (legacyAutoUpgrade == false) NEVER else DIRECT
+    }
+}
+
+/** Cellular-only streaming choice: adapt to the link and buffer, never above the Wi-Fi choice. */
+const val CELLULAR_QUALITY_AUTO = 0
+
 data class MiscSettings(
     /** When on, the app's accent color follows the dominant color of the
      *  currently-scrobbling track's artwork (Home's "now playing" track),
@@ -111,6 +126,10 @@ data class MiscSettings(
      *  font (see ui/theme/Type.kt); off: the device's own system font.
      *  Defaults on so the app ships with its own identity out of the box. */
     val useCustomFont: Boolean = true,
+    /** "Use Bold Font": on draws every piece of text, lyrics included, in a heavier weight. */
+    val useBoldFont: Boolean = false,
+    /** Scrolling a tab shrinks the nav bar to an icon pill with the mini player docked beside it. Off keeps the classic bar. */
+    val collapsingNavBar: Boolean = true,
     /** Last.fm usernames pinned to the top of Home's friend-switcher sheet
      *  (long-press a friend row to toggle). Order among pinned friends
      *  follows whatever order user.getfriends itself returns them in —
@@ -119,12 +138,14 @@ data class MiscSettings(
     /** When true, the player attempts to resolve and stream lossless / Hi-Res audio
      *  directly from lossless CDN when a high-confidence match exists. Falls back to YouTube Music. */
     val preferLosslessStreaming: Boolean = true,
+    val hiResStart: HiResStart = HiResStart.DIRECT,
     /** When true, the player also queries installed provider modules in
      *  parallel with the addon; a module hit plays instantly on miss. */
     val preferProviderModules: Boolean = true,
-    /** Preferred quality preset for lossless streaming (27: 24/192, 7: 24/96, 6: 16/44.1, 5: 320k).
-     *  If a track does not support the requested quality, the worker automatically selects the highest available. */
-    val losslessQuality: Int = 27,
+    /** Preferred streaming quality when connected over Wi-Fi or Ethernet. */
+    val wifiStreamingQuality: Int = 27,
+    /** Streaming quality over cellular data; [CELLULAR_QUALITY_AUTO] adapts to the link. */
+    val cellularStreamingQuality: Int = 5,
     /** Preferred quality preset for downloads (27: 24/192, 7: 24/96, 6: 16/44.1, 5: 320k, -1: YouTube Music). */
     val downloadQuality: Int = 27,
     /** Optional studio-clarity curve. On by default; Bit-Perfect disables it. */
@@ -165,9 +186,8 @@ data class MiscSettings(
     val autoplaySimilarEnabled: Boolean = true,
     /** Crossfade length in seconds; kept within the native settings slider range. */
     val crossfadeSeconds: Int = 5,
-    /** When true (default), uses the multi-layer dynamic wavy seekbar.
-     *  When false, uses the classic standard progress slider in the player tab. */
-    val wavySeekbarEnabled: Boolean = true,
+    /** Animated wavy seekbar in the player; off by default (classic slider). */
+    val wavySeekbarEnabled: Boolean = false,
     val rotatingBackgroundEnabled: Boolean = true,
     /** When true, animates fluid rotating artwork in the lyrics background.
      *  When false (default), uses static blurred artwork background in the lyrics view. */
@@ -242,7 +262,7 @@ data class MiscSettings(
     /** Display name used in LastWave Jam sessions. */
     val jamDisplayName: String = "",
     /** Custom Jam WebSocket server URL. */
-    val jamServerUrl: String = "wss://jam.clashprojects.qd.je/ws",
+    val jamServerUrl: String = "wss://jam.clashgram.org/ws",
     /** Jam Room Mode default: "collaborative" or "host_only". */
     val jamRoomMode: String = "collaborative",
     /** Apple Music-style tactile rhythm synchronization. */
@@ -294,6 +314,7 @@ val DEFAULT_SECTION_ORDER: List<String> = listOf(
     "yt:Live performances",
     "friends_activity",
     "podcast_shelf",
+    "moods_and_genres",
     "yt:Similar to",
     "yt:Music video for you",
     "yt:Trending songs for you",
@@ -388,10 +409,17 @@ class SettingsPreferences @Inject constructor(
     private object Keys {
         val DYNAMIC_NOW_PLAYING = booleanPreferencesKey("lw_dynamic_now_playing")
         val USE_CUSTOM_FONT = booleanPreferencesKey("lw_use_custom_font")
+        val USE_BOLD_FONT = booleanPreferencesKey("lw_use_bold_font")
+        val COLLAPSING_NAV_BAR = booleanPreferencesKey("lw_collapsing_nav_bar")
         val PINNED_FRIENDS = stringSetPreferencesKey("lw_pinned_friends")
         val PREFER_LOSSLESS_STREAMING = booleanPreferencesKey("lw_prefer_lossless_streaming")
+        /** Legacy on/off toggle; read once to seed [HI_RES_START]. */
+        val AUTO_UPGRADE_HI_RES = booleanPreferencesKey("lw_auto_upgrade_hi_res")
+        val HI_RES_START = stringPreferencesKey("lw_hi_res_start")
         val PREFER_PROVIDER_MODULES = booleanPreferencesKey("lw_prefer_provider_modules")
         val LOSSLESS_QUALITY = intPreferencesKey("lw_lossless_quality")
+        val WIFI_STREAMING_QUALITY = intPreferencesKey("lw_wifi_streaming_quality")
+        val CELLULAR_STREAMING_QUALITY = intPreferencesKey("lw_cellular_streaming_quality")
         val DOWNLOAD_QUALITY = intPreferencesKey("lw_download_quality")
         val MUSIC_ENHANCER = booleanPreferencesKey("lw_music_enhancer")
         val CLARITY_PRESET = intPreferencesKey("lw_clarity_preset")
@@ -490,18 +518,29 @@ class SettingsPreferences @Inject constructor(
             MiscSettings(
                 dynamicNowPlayingEnabled = p.readSafely(Keys.DYNAMIC_NOW_PLAYING) ?: false,
                 useCustomFont = p.readSafely(Keys.USE_CUSTOM_FONT) ?: true,
+                useBoldFont = p.readSafely(Keys.USE_BOLD_FONT) ?: false,
+                collapsingNavBar = p.readSafely(Keys.COLLAPSING_NAV_BAR) ?: true,
                 pinnedFriends = p.readSafely(Keys.PINNED_FRIENDS) ?: emptySet(),
                 preferLosslessStreaming = p.readSafely(Keys.PREFER_LOSSLESS_STREAMING) ?: true,
+                hiResStart = HiResStart.fromId(p.readSafely(Keys.HI_RES_START), p.readSafely(Keys.AUTO_UPGRADE_HI_RES)),
                 preferProviderModules = p.readSafely(Keys.PREFER_PROVIDER_MODULES) ?: true,
-                losslessQuality = p.readSafely(Keys.LOSSLESS_QUALITY)?.takeIf { it in LOSSLESS_QUALITIES } ?: 27,
+                wifiStreamingQuality = p.readSafely(Keys.WIFI_STREAMING_QUALITY)
+                    ?.let(::normalizeStreamingQuality)
+                    ?: p.readSafely(Keys.LOSSLESS_QUALITY)?.let(::normalizeStreamingQuality)
+                    ?: 27,
+                cellularStreamingQuality = p.readSafely(Keys.CELLULAR_STREAMING_QUALITY)
+                    ?.let { it.takeIf { q -> q == CELLULAR_QUALITY_AUTO } ?: normalizeStreamingQuality(it) }
+                    ?: p.readSafely(Keys.LOSSLESS_QUALITY)?.let(::normalizeStreamingQuality)
+                    ?: 5,
                 downloadQuality = p.readSafely(Keys.DOWNLOAD_QUALITY)?.takeIf { it in DOWNLOAD_QUALITIES } ?: 27,
                 systemEffectsMode = p.readSafely(Keys.SYSTEM_EFFECTS_MODE) ?: false,
                 buttonNowPlayingEnabled = p.readSafely(Keys.BUTTON_NOW_PLAYING_ENABLED) ?: false,
                 musicVideoEnabled = p.readSafely(Keys.MUSIC_VIDEO_ENABLED) ?: true,
                 showAutoEqInVolumePanel = p.readSafely(Keys.SHOW_AUTO_EQ_IN_VOLUME_PANEL) ?: true,
                 isStudioMasterClarityEnabled = p.readSafely(Keys.MUSIC_ENHANCER) ?: true,
-                clarityPreset = p.readSafely(Keys.CLARITY_PRESET)?.takeIf { it in 0..3 } ?: 0,
-                clarityAtmosBypass = p.readSafely(Keys.CLARITY_ATMOS_BYPASS) ?: false,
+                // Clarity is a single on/off again: always the Reference curve, never bypassed on spatial.
+                clarityPreset = 0,
+                clarityAtmosBypass = false,
                 isBitPerfectEnabled = p.readSafely(Keys.BIT_PERFECT_ENABLED) ?: false,
                 wordByWordLyrics = p.readSafely(Keys.WORD_BY_WORD_LYRICS) ?: true,
                 lyricsProvider = LyricsProvider.fromId(p.readSafely(Keys.LYRICS_PROVIDER)),
@@ -512,7 +551,7 @@ class SettingsPreferences @Inject constructor(
                 crossfadeEnabled = p.readSafely(Keys.CROSSFADE_ENABLED) ?: false,
                 autoplaySimilarEnabled = p.readSafely(Keys.AUTOPLAY_SIMILAR_ENABLED) ?: true,
                 crossfadeSeconds = (p.readSafely(Keys.CROSSFADE_SECONDS) ?: 5).coerceIn(1, 12),
-                wavySeekbarEnabled = p.readSafely(Keys.WAVY_SEEKBAR_ENABLED) ?: true,
+                wavySeekbarEnabled = p.readSafely(Keys.WAVY_SEEKBAR_ENABLED) ?: false,
                 rotatingBackgroundEnabled = p.readSafely(Keys.ROTATING_BACKGROUND_ENABLED) ?: true,
                 lyricsRotatingBackgroundEnabled = p.readSafely(Keys.LYRICS_ROTATING_BACKGROUND_ENABLED) ?: false,
                 keepLyricsScreenAwake = p.readSafely(Keys.KEEP_LYRICS_SCREEN_AWAKE) ?: false,
@@ -547,7 +586,12 @@ class SettingsPreferences @Inject constructor(
                 suppressYouTubeLoginPrompt = p.readSafely(Keys.SUPPRESS_YOUTUBE_LOGIN_PROMPT) ?: false,
                 hasDismissedJoinSupportPrompt = p.readSafely(Keys.HAS_DISMISSED_JOIN_SUPPORT_PROMPT) ?: false,
                 jamDisplayName = p.readSafely(Keys.JAM_DISPLAY_NAME)?.trim().orEmpty(),
-                jamServerUrl = p.readSafely(Keys.JAM_SERVER_URL)?.trim().takeIf { !it.isNullOrBlank() } ?: "wss://jam.clashprojects.qd.je/ws",
+                jamServerUrl = p.readSafely(Keys.JAM_SERVER_URL)?.trim().let { raw ->
+                    when {
+                        raw.isNullOrBlank() || raw == "wss://jam.clashprojects.qd.je/ws" -> "wss://jam.clashgram.org/ws"
+                        else -> raw
+                    }
+                },
                 jamRoomMode = p.readSafely(Keys.JAM_ROOM_MODE)?.trim().takeIf { it == "host_only" || it == "collaborative" } ?: "collaborative",
                 musicHapticsEnabled = p.readSafely(Keys.MUSIC_HAPTICS_ENABLED) ?: false,
                 musicHapticsMode = MusicHapticsMode.fromName(p.readSafely(Keys.MUSIC_HAPTICS_MODE)),
@@ -740,6 +784,14 @@ class SettingsPreferences @Inject constructor(
         dataStore.edit { it[Keys.USE_CUSTOM_FONT] = enabled }
     }
 
+    suspend fun setUseBoldFont(enabled: Boolean) {
+        dataStore.edit { it[Keys.USE_BOLD_FONT] = enabled }
+    }
+
+    suspend fun setCollapsingNavBar(enabled: Boolean) {
+        dataStore.edit { it[Keys.COLLAPSING_NAV_BAR] = enabled }
+    }
+
     suspend fun setPodcastsEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.PODCASTS_ENABLED] = enabled }
     }
@@ -792,16 +844,35 @@ class SettingsPreferences @Inject constructor(
         }
     }
 
+    suspend fun setHiResStart(mode: HiResStart) {
+        dataStore.edit { it[Keys.HI_RES_START] = mode.id }
+    }
+
     suspend fun setPreferProviderModules(enabled: Boolean) {
         dataStore.edit {
             it[Keys.PREFER_PROVIDER_MODULES] = enabled
         }
     }
 
-    suspend fun setLosslessQuality(quality: Int) {
+    suspend fun setWifiStreamingQuality(quality: Int) {
         dataStore.edit {
-            val q = quality.takeIf { it in LOSSLESS_QUALITIES } ?: 27
+            val q = quality.takeIf { it in STREAMING_QUALITIES } ?: 27
+            if (it[Keys.CELLULAR_STREAMING_QUALITY] == null) {
+                // Preserve an existing one-profile preference on both networks the first time
+                // the user opens the new controls; fresh installs start cellular at 320 kbps.
+                it[Keys.CELLULAR_STREAMING_QUALITY] =
+                    it[Keys.LOSSLESS_QUALITY]?.let(::normalizeStreamingQuality) ?: 5
+            }
+            it[Keys.WIFI_STREAMING_QUALITY] = q
+            // Keep the old preference in sync for downgrade compatibility.
             it[Keys.LOSSLESS_QUALITY] = q
+        }
+    }
+
+    suspend fun setCellularStreamingQuality(quality: Int) {
+        dataStore.edit {
+            it[Keys.CELLULAR_STREAMING_QUALITY] =
+                quality.takeIf { it == CELLULAR_QUALITY_AUTO || it in STREAMING_QUALITIES } ?: 5
         }
     }
 
@@ -1108,7 +1179,7 @@ class SettingsPreferences @Inject constructor(
     }
 
     suspend fun setJamServerUrl(url: String) {
-        val trimmed = url.trim().ifEmpty { "wss://jam.clashprojects.qd.je/ws" }
+        val trimmed = url.trim().ifEmpty { "wss://jam.clashgram.org/ws" }
         dataStore.edit { it[Keys.JAM_SERVER_URL] = trimmed }
     }
 
@@ -1116,7 +1187,13 @@ class SettingsPreferences @Inject constructor(
         dataStore.edit { it[Keys.JAM_ROOM_MODE] = mode }
     }
     private companion object {
-        val LOSSLESS_QUALITIES = setOf(-1, 4, 5, 6, 7, 27, 28)
+        val STREAMING_QUALITIES = setOf(-1, 4, 5, 6, 27, 28)
         val DOWNLOAD_QUALITIES = setOf(-1, 4, 5, 6, 7, 27, 28)
+    }
+
+    private fun normalizeStreamingQuality(quality: Int): Int? = when (quality) {
+        in STREAMING_QUALITIES -> quality
+        7 -> 27 // Fold the old 24/96 option into the single Hi-Res choice.
+        else -> null
     }
 }

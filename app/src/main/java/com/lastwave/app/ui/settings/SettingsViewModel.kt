@@ -524,8 +524,12 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicNowPlaying(enabled: Boolean) = launchSettingsAction("update dynamic theme") { themeRepository.setDynamicNowPlaying(enabled) }
     fun setUseCustomFont(enabled: Boolean) = launchSettingsAction("update the app font") { settingsPreferences.setUseCustomFont(enabled) }
+    fun setUseBoldFont(enabled: Boolean) = launchSettingsAction("update font weight") { settingsPreferences.setUseBoldFont(enabled) }
+    fun setCollapsingNavBar(enabled: Boolean) = launchSettingsAction("update nav bar collapse") { settingsPreferences.setCollapsingNavBar(enabled) }
     fun setPreferLosslessStreaming(enabled: Boolean) = launchSettingsAction("update streaming preference") { settingsPreferences.setPreferLosslessStreaming(enabled) }
-    fun setLosslessQuality(quality: Int) = launchSettingsAction("update streaming quality") { settingsPreferences.setLosslessQuality(quality) }
+    fun setHiResStart(mode: com.lastwave.app.data.local.HiResStart) = launchSettingsAction("update hi-res start") { settingsPreferences.setHiResStart(mode) }
+    fun setWifiStreamingQuality(quality: Int) = launchSettingsAction("update Wi-Fi streaming quality") { settingsPreferences.setWifiStreamingQuality(quality) }
+    fun setCellularStreamingQuality(quality: Int) = launchSettingsAction("update cellular streaming quality") { settingsPreferences.setCellularStreamingQuality(quality) }
     fun setDownloadQuality(quality: Int) = launchSettingsAction("update download quality") { settingsPreferences.setDownloadQuality(quality) }
     fun setStudioMasterClarity(enabled: Boolean) {
         // Apply immediately; DataStore persists the same state for future engine instances.
@@ -805,7 +809,10 @@ class SettingsViewModel @Inject constructor(
     /** Selecting a preset also switches the EQ on — an off equalizer with a
      *  fresh preset would read as a dead control. */
     fun applyEqPreset(name: String) {
-        com.lastwave.app.data.local.EqualizerPresets.byName(name)?.let { preset ->
+        (
+            com.lastwave.app.data.local.EqualizerPresets.byName(name)
+                ?: equalizer.value.userPresets.firstOrNull { it.name == name }
+            )?.let { preset ->
             immediateEqEnabled = true
             immediateEqGains = preset.gainsDb.toFloatArray()
             eqPreviews.trySend(true to immediateEqGains.copyOf())
@@ -825,7 +832,20 @@ class SettingsViewModel @Inject constructor(
         eqPreviews.trySend(immediateEqEnabled to immediateEqGains.copyOf())
     }
 
-    /** Manual band drag → curve becomes Custom. */
+    /** Saves the current curve as one of the listener's own named presets (max 20). */
+    fun saveEqPreset(name: String) {
+        launchSettingsAction("save the equalizer preset") { equalizerPreferences.saveUserPreset(name) }
+    }
+
+    fun renameEqPreset(oldName: String, newName: String) {
+        launchSettingsAction("rename the equalizer preset") { equalizerPreferences.renameUserPreset(oldName, newName) }
+    }
+
+    fun deleteEqPreset(name: String) {
+        launchSettingsAction("delete the equalizer preset") { equalizerPreferences.deleteUserPreset(name) }
+    }
+
+    /** Manual band drag → saved into the active own preset, otherwise the curve becomes Custom. */
     fun setEqBandGain(bandIndex: Int, gainDb: Float) {
         if (bandIndex !in immediateEqGains.indices) return
         previewEqBandGain(bandIndex, gainDb)
@@ -877,6 +897,7 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
                 val bytesWritten = fileExportHelper.writeTextToUri(uri, json)
+                runCatching { playlistRepository.exportPublicMirror() }
                 _uiState.update { it.copy(toastMessage = appContext.getString(com.lastwave.app.R.string.toast_backup_ok, bytesWritten / 1024)) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(toastMessage = appContext.getString(com.lastwave.app.R.string.toast_backup_fail, e.localizedMessage ?: e.message)) }

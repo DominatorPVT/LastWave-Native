@@ -104,17 +104,31 @@ object SettingsSearchIndex {
             // ==========================================
             add(
                 SettingsEntry(
-                    id = "audio.streaming_quality",
-                    title = "Streaming Quality",
-                    subtitle = "Lossless, Hi-Res, FLAC, AAC, MP3, 24-bit / 192 kHz, bit depth & sample rate",
+                    id = "audio.wifi_streaming_quality",
+                    title = "Wi-Fi Streaming Quality",
+                    subtitle = "Choose audio quality while connected to Wi-Fi",
                     keywords = listOf(
                         "quality", "bitrate", "flac", "lossless", "hires", "hi-res", "dolby", "atmos",
                         "mp3", "aac", "opus", "streaming", "audio quality", "sound quality", "192khz",
-                        "24-bit", "stream", "format"
+                        "24-bit", "stream", "format", "wifi", "wireless"
                     ),
                     icon = Icons.Filled.HighQuality,
                     iconContainer = { MaterialTheme.colorScheme.primaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onPrimaryContainer },
+                    parentTab = SettingsTab.AUDIO,
+                    section = "Audio & Playback",
+                    type = EntryType.ACTION,
+                )
+            )
+            add(
+                SettingsEntry(
+                    id = "audio.cellular_streaming_quality",
+                    title = "Cellular Streaming Quality",
+                    subtitle = "Choose audio quality while using mobile data",
+                    keywords = listOf("quality", "bitrate", "streaming", "cellular", "mobile data", "data usage", "audio", "auto", "adaptive"),
+                    icon = Icons.Filled.HighQuality,
+                    iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
+                    iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
                     parentTab = SettingsTab.AUDIO,
                     section = "Audio & Playback",
                     type = EntryType.ACTION,
@@ -135,6 +149,23 @@ object SettingsSearchIndex {
                     parentTab = SettingsTab.AUDIO,
                     section = "Audio & Playback",
                     type = EntryType.ACTION,
+                )
+            )
+            add(
+                SettingsEntry(
+                    id = "audio.auto_upgrade_hi_res",
+                    title = "Playback start",
+                    subtitle = "Fast start, best quality first, or never upgrade",
+                    keywords = listOf(
+                        "auto upgrade", "hi-res", "hires", "lossless", "flac", "opus",
+                        "upgrade", "streaming", "quality", "background upgrade", "start", "direct", "best quality"
+                    ),
+                    icon = Icons.Filled.HighQuality,
+                    iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
+                    iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
+                    parentTab = SettingsTab.AUDIO,
+                    section = "Audio & Playback",
+                    type = EntryType.TOGGLE,
                 )
             )
             add(
@@ -409,40 +440,6 @@ object SettingsSearchIndex {
                     type = EntryType.TOGGLE,
                 )
             )
-            add(
-                SettingsEntry(
-                    id = "audio.clarity_preset",
-                    title = "Clarity Output Preset",
-                    subtitle = "Select clarity sound signature: Audiophile, Warm, Bright, or Vocal",
-                    keywords = listOf(
-                        "clarity preset", "preset", "sound signature", "warm", "bright", "audiophile",
-                        "tuning", "vocal preset"
-                    ),
-                    icon = Icons.Filled.Tune,
-                    iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
-                    iconTint = { MaterialTheme.colorScheme.onTertiaryContainer },
-                    parentTab = SettingsTab.AUDIO,
-                    section = "Output & Loudness",
-                    type = EntryType.ACTION,
-                )
-            )
-            add(
-                SettingsEntry(
-                    id = "audio.clarity_spatial_bypass",
-                    title = "Clarity Spatial Bypass",
-                    subtitle = "Automatically bypass clarity processing on multichannel and spatial audio sources",
-                    keywords = listOf(
-                        "clarity bypass", "spatial bypass", "atmos bypass", "multichannel bypass",
-                        "dsp bypass", "disable clarity on spatial"
-                    ),
-                    icon = Icons.Filled.GraphicEq,
-                    iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
-                    iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
-                    parentTab = SettingsTab.AUDIO,
-                    section = "Output & Loudness",
-                    type = EntryType.TOGGLE,
-                )
-            )
 
             // ==========================================
             // TAB: APPEARANCE & VISUALS
@@ -552,7 +549,7 @@ object SettingsSearchIndex {
                 SettingsEntry(
                     id = "appearance.md3_nav_bar",
                     title = "Material 3 Navigation Bar",
-                    subtitle = "Classic full-width bottom navigation bar instead of the floating dock",
+                    subtitle = "Compact floating dock with a label beside the selected icon",
                     keywords = listOf(
                         "md3", "material 3", "navigation bar", "bottom bar", "nav bar",
                         "dock", "floating dock", "full width nav"
