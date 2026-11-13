@@ -171,13 +171,15 @@ fun TvLoginScreen(
         val wv = webView ?: return@LaunchedEffect
         if (!pointerEnabled || cursorX.isNaN() || pointerDown || dragging) return@LaunchedEffect
         val edgeZone = with(density) { 32.dp.toPx() }
-        val step = (wv.height / 4).coerceAtLeast(120)
+        // Plain View/WebView has no animated-scroll helper (that lives on
+        // ScrollView) — frequent small scrollBy steps read just as smooth.
+        val step = (wv.height / 8).coerceAtLeast(60)
         while (isActive) {
             val atBottom = cursorY >= wv.height - edgeZone
             val atTop = cursorY <= edgeZone
             if (!atBottom && !atTop) return@LaunchedEffect
-            if (atBottom) wv.smoothScrollBy(0, step) else wv.smoothScrollBy(0, -step)
-            delay(220)
+            if (atBottom) wv.scrollBy(0, step) else wv.scrollBy(0, -step)
+            delay(120)
         }
     }
 
