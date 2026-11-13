@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -219,7 +220,9 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
     }
 }
 
-/** Account line: status under the service name; OK opens the login WebView. */
+/** Account line: before sign-in the whole row opens the login WebView; once
+    connected the sign-in affordance disappears entirely — the card becomes
+    display-only and a separate sign-out row logs the account out. */
 @Composable
 private fun TvAccountRow(
     title: String,
@@ -233,11 +236,22 @@ private fun TvAccountRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .tvLift(focused = isFocused, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
+            .tvLift(focused = isFocused && !connected, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isFocused) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(
+                if (isFocused && !connected) {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                }
+            )
             .onFocusChanged { isFocused = it.isFocused }
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .then(
+                // Signed-in cards take no action: OK must never reopen the
+                // login flow for an account that is already connected.
+                if (connected) Modifier else
+                    Modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            )
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -263,11 +277,20 @@ private fun TvAccountRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = stringResource(R.string.tv_account_sign_in),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        if (connected) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.tv_account_sign_in),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
@@ -280,23 +303,31 @@ private fun TvSignOutRow(label: String, onClick: () -> Unit) {
             .fillMaxWidth()
             .tvLift(focused = isFocused, shape = RoundedCornerShape(16.dp), focusedScale = 1.01f, elevation = 6.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isFocused) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)
+            .background(if (isFocused) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow)
             .onFocusChanged { isFocused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(
-            imageVector = Icons.Rounded.Logout,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Logout,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(19.dp),
+            )
+        }
         Text(
             text = stringResource(R.string.tv_account_sign_out, label),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
