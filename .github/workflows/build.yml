@@ -95,25 +95,21 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          if ! ./gradlew assemble${BUILD_VARIANT} --stacktrace > phone_build.log 2>&1; then
-            {
-              echo "### Phone build failed — task errors"
-              echo '```'
-              grep -E '^e: |error:|FAILURE:|> Task.*FAILED|Caused by:|Execution failed' phone_build.log | head -50 || true
-              echo '```'
-              echo '<details><summary>Last 80 log lines</summary>'
-              echo ''
-              echo '```'
-              tail -n 80 phone_build.log
-              echo '```'
-              echo '</details>'
-            } >> "$GITHUB_STEP_SUMMARY"
+          set +e
+          ./gradlew assemble${BUILD_VARIANT} --stacktrace > phone_build.log 2>&1
+          GRADLE_RC=$?
+          set -e
+          echo "::notice::phone gradle rc=$GRADLE_RC variant=${BUILD_VARIANT:-UNSET}"
+          if [ "$GRADLE_RC" -ne 0 ]; then
+            grep -E '^e: ' phone_build.log | head -30 | while IFS= read -r l; do echo "::error::$l"; done || true
+            grep -E 'FAILURE:|> Task.*FAILED|Caused by:' phone_build.log | head -15 | while IFS= read -r l; do echo "::error::$l"; done || true
             exit 1
           fi
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p final_apk
-          cp "app/build/outputs/apk/${BUILD_VARIANT}/app-${BUILD_VARIANT}.apk" "final_apk/LastWave-v${VERSION}-${BUILD_VARIANT}.apk"
+          cp "app/build/outputs/apk/${BUILD_VARIANT}/app-${BUILD_VARIANT}.apk" "final_apk/LastWave-v${VERSION}-${BUILD_VARIANT}.apk" || { echo "::error::APK copy failed"; exit 1; }
+          echo "::notice::phone apk copied"
 
       - name: Build TV APK (universal, minSdk 23 for older TVs)
         env:
@@ -125,19 +121,14 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          if ! ./gradlew assemble${BUILD_VARIANT} --stacktrace > tv_build.log 2>&1; then
-            {
-              echo "### TV build failed — task errors"
-              echo '```'
-              grep -E '^e: |error:|FAILURE:|> Task.*FAILED|Caused by:|Execution failed' tv_build.log | head -50 || true
-              echo '```'
-              echo '<details><summary>Last 80 log lines</summary>'
-              echo ''
-              echo '```'
-              tail -n 80 tv_build.log
-              echo '```'
-              echo '</details>'
-            } >> "$GITHUB_STEP_SUMMARY"
+          set +e
+          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=23 --stacktrace > tv_build.log 2>&1
+          GRADLE_RC=$?
+          set -e
+          echo "::notice::tv gradle rc=$GRADLE_RC variant=${BUILD_VARIANT:-UNSET}"
+          if [ "$GRADLE_RC" -ne 0 ]; then
+            grep -E '^e: ' tv_build.log | head -30 | while IFS= read -r l; do echo "::error::$l"; done || true
+            grep -E 'FAILURE:|> Task.*FAILED|Caused by:' tv_build.log | head -15 | while IFS= read -r l; do echo "::error::$l"; done || true
             exit 1
           fi
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
