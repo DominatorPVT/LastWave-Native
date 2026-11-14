@@ -350,7 +350,10 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                 // Spotify-TV artist profile: full-pane overlay above the tabs.
                 // Fade/slide entry; the pane itself is opaque, so the tab
                 // underneath never shows through a half-drawn profile.
-                AnimatedVisibility(
+                // Fully qualified on purpose: inside this Column+Box nesting
+                // the bare name resolves to the ColumnScope extension, which
+                // the compiler rejects for a non-innermost implicit receiver.
+                androidx.compose.animation.AnimatedVisibility(
                     visible = viewModel.artistName != null,
                     enter = fadeIn(animationSpec = tween(durationMillis = 180)) +
                         slideInVertically(animationSpec = tween(durationMillis = 180)) { it / 6 },
