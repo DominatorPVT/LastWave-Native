@@ -1,5 +1,6 @@
 package com.lastwave.app.ui.tv
 
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -63,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lastwave.app.R
 import com.lastwave.app.data.lyrics.LyricLine
 import com.lastwave.app.ui.player.LyricsUiState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -185,6 +187,16 @@ private fun TvSyncedLyrics(
     var lastUserScrollAt by remember { mutableLongStateOf(0L) }
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
+    // The in-flight manual scroll. Key repeats fire roughly ten events a
+    // second while a direction is held, so each new event cancels the still-
+    // running animation instead of queueing behind it — otherwise the mutex
+    // serialises every launch and the list keeps gliding for seconds after
+    // the key is released.
+    var scrollJob by remember { mutableStateOf<Job?>(null) }
+    fun cancelManualScroll() {
+        scrollJob?.cancel()
+        scrollJob = null
+    }
 
     // Deriving the active index from the position flow keeps per-tick work to a
     // single int comparison — recomposition only happens when the line changes.
@@ -214,8 +226,9 @@ private fun TvSyncedLyrics(
                     Key.DirectionUp -> -1f
                     else -> return@onPreviewKeyEvent false
                 }
-                lastUserScrollAt = System.currentTimeMillis()
-                scope.launch {
+                lastUserScrollAt = SystemClock.uptimeMillis()
+                cancelManualScroll()
+                scrollJob = scope.launch {
                     val step = with(density) { LYRICS_SCROLL_STEP_DP.dp.toPx() }
                     listState.animateScrollBy(direction * step)
                 }
@@ -230,7 +243,7 @@ private fun TvSyncedLyrics(
     }
 
     LaunchedEffect(activeLine) {
-        if (activeLine >= 0 && System.currentTimeMillis() - lastUserScrollAt > USER_SCROLL_HOLD_MS) {
+        if (activeLine >= 0 && SystemClock.uptimeMillis() - lastUserScrollAt > USER_SCROLL_HOLD_MS) {
             runCatching { listState.animateScrollToItem(activeLine) }
         }
     }

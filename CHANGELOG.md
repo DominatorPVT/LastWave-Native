@@ -39,6 +39,7 @@
 ### Fixed
 - **Seekable FLAC Downloads:** Fixed fragmented-MP4 header parsing (FullBox version/flags offsets) so STREAMINFO total samples, sidx timescale and duration patching land on the right fields and FLAC downloads seek correctly.
 - **Android TV on API 23:** DataStore lowered to 1.1.7 so the TV build keeps its Android 6.0 minimum instead of being forced to API 24 by DataStore 1.3.
+- **TV Lyrics Scrolling:** Holding the D-pad on the lyrics screen now steers the list instantly and stops the moment the key is released, instead of letting queued scroll animations keep gliding.
 
 ## [5.0.0] - 2026-10-30
 
