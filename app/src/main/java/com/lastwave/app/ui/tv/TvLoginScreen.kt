@@ -183,6 +183,20 @@ fun TvLoginScreen(
         }
     }
 
+    // The pointer is permanent inside sign-in pages: it parks at the page
+    // centre the moment the WebView exists, with no first D-pad press needed.
+    // The Settings toggle still removes it entirely — then the WebView owns
+    // the remote natively and no pointer logic runs.
+    LaunchedEffect(pointerEnabled, webView) {
+        val wv = webView ?: return@LaunchedEffect
+        if (!pointerEnabled || !cursorX.isNaN()) return@LaunchedEffect
+        // Wait a frame so the WebView reports its real size before parking.
+        withFrameNanos { }
+        if (wv.width <= 0) withFrameNanos { }
+        cursorX = if (wv.width > 0) wv.width / 2f else 400f
+        cursorY = if (wv.height > 0) wv.height / 2f else 300f
+    }
+
     /** Reads the `sp_dc` cookie on a post-auth page and stores it (phone logic). */
     fun captureSpDc(url: String?): Boolean {
         if (url == null || !SpotifyLoginUrls.isPostAuth(url)) return false

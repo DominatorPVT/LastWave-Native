@@ -348,7 +348,14 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                     }
                 }
                 // Spotify-TV artist profile: full-pane overlay above the tabs.
-                if (viewModel.artistName != null) {
+                // Fade/slide entry; the pane itself is opaque, so the tab
+                // underneath never shows through a half-drawn profile.
+                AnimatedVisibility(
+                    visible = viewModel.artistName != null,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 180)) +
+                        slideInVertically(animationSpec = tween(durationMillis = 180)) { it / 6 },
+                    exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+                ) {
                     TvArtistScreen(viewModel = viewModel)
                 }
             }
@@ -1826,7 +1833,11 @@ private fun TvArtistScreen(viewModel: TvHomeViewModel) {
         runCatching { playFocus.requestFocus() }
     }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        // Opaque pane: this profile overlays the tab content, so without a
+        // solid background the underlying screen shows through every gap.
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 40.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
