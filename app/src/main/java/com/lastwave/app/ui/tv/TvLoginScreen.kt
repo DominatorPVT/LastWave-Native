@@ -115,9 +115,9 @@ fun TvLoginScreen(
     }
     val ytState by ytViewModel.uiState.collectAsStateWithLifecycle()
 
-    // Virtual pointer preference (setup wizard + Settings toggle). Off = the
-    // WebView owns the remote natively; On = the pointer dot drives clicks.
-    val pointerEnabled by TvSettings.virtualMouse.collectAsStateWithLifecycle()
+    // The virtual pointer is always on inside sign-in pages — by default and
+    // permanently; the Setup/Settings toggles for it no longer exist.
+    val pointerEnabled = true
 
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(true) }

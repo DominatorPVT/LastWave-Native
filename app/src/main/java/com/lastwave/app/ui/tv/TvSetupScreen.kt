@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -60,13 +62,12 @@ import com.lastwave.app.R
  * pages, then offers both the YouTube and Spotify logins. Everything is
  * skippable — "Skip setup" completes the wizard with defaults.
  */
-private enum class TvSetupStep { WELCOME, MOUSE, SIGN_IN, DONE }
+private enum class TvSetupStep { WELCOME, SIGN_IN, DONE }
 
 @Composable
 fun TvSetupScreen(onComplete: () -> Unit) {
     var step by rememberSaveable { mutableStateOf(TvSetupStep.WELCOME) }
     var loginTarget by remember { mutableStateOf<TvLoginTarget?>(null) }
-    val mouseEnabled by TvSettings.virtualMouse.collectAsStateWithLifecycle()
 
     BackHandler(enabled = step != TvSetupStep.WELCOME) {
         step = TvSetupStep.entries[step.ordinal - 1]
@@ -91,15 +92,27 @@ fun TvSetupScreen(onComplete: () -> Unit) {
                     title = stringResource(R.string.tv_setup_welcome_title),
                     message = stringResource(R.string.tv_setup_welcome_body),
                     hero = {
-                        Image(
-                            painter = painterResource(R.drawable.ic_launcher_logo),
-                            contentDescription = null,
-                            modifier = Modifier.size(96.dp),
-                        )
+                        // The original launcher mark: the dark bars sit on the
+                        // logo's lime disc — on their own they are all but
+                        // invisible against the dark TV background.
+                        Box(
+                            modifier = Modifier
+                                .size(96.dp)
+                                .clip(CircleShape)
+                                .background(colorResource(R.color.ic_launcher_background))
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_launcher_logo),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     },
                 ) {
                     TvSetupButton(stringResource(R.string.tv_setup_continue), initialFocus = true) {
-                        step = TvSetupStep.MOUSE
+                        step = TvSetupStep.SIGN_IN
                     }
                     TvSetupButton(stringResource(R.string.tv_setup_skip)) {
                         TvSettings.setSetupCompleted(true)
@@ -107,30 +120,6 @@ fun TvSetupScreen(onComplete: () -> Unit) {
                     }
                 }
 
-                TvSetupStep.MOUSE -> TvSetupPage(
-                    title = stringResource(R.string.tv_setup_mouse_title),
-                    message = stringResource(R.string.tv_setup_mouse_body),
-                    hero = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            TvSetupChoice(
-                                label = stringResource(R.string.tv_setup_on),
-                                selected = mouseEnabled,
-                                initialFocus = mouseEnabled,
-                                onClick = { TvSettings.setVirtualMouse(true) },
-                            )
-                            TvSetupChoice(
-                                label = stringResource(R.string.tv_setup_off),
-                                selected = !mouseEnabled,
-                                initialFocus = !mouseEnabled,
-                                onClick = { TvSettings.setVirtualMouse(false) },
-                            )
-                        }
-                    },
-                ) {
-                    TvSetupButton(stringResource(R.string.tv_setup_continue)) {
-                        step = TvSetupStep.SIGN_IN
-                    }
-                }
 
                 TvSetupStep.SIGN_IN -> TvSetupPage(
                     title = stringResource(R.string.tv_setup_signin_title),

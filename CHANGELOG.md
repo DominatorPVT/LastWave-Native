@@ -41,7 +41,8 @@
 - **Android TV on API 23:** DataStore lowered to 1.1.7 so the TV build keeps its Android 6.0 minimum instead of being forced to API 24 by DataStore 1.3.
 - **TV Lyrics Scrolling:** Holding the D-pad on the lyrics screen now steers the list instantly and stops the moment the key is released, instead of letting queued scroll animations keep gliding.
 - **Artist Profile Backdrop:** The artist page now paints a solid background and slides in smoothly, so the browse screen no longer shows through behind it.
-- **Virtual Pointer on Sign-In Pages:** The virtual mouse pointer is parked at the centre of a sign-in page the moment it opens — no first D-pad press needed. TV Settings → Virtual mouse pointer still decides whether you want it at all.
+- **Virtual Pointer on Sign-In Pages:** The virtual mouse pointer is now always on in sign-in pages — parked at the centre the moment a page opens, no first D-pad press needed. The pointer options were removed from the setup wizard and TV Settings.
+- **Setup Welcome Logo:** The setup screen now shows the original LastWave mark — the dark bars on the logo's lime disc — instead of the barely visible dark-on-dark bars.
 
 ## [5.0.0] - 2026-10-30
 

@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -122,7 +121,6 @@ class TvSettingsViewModel @Inject constructor(
 fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
     val settingsViewModel: TvSettingsViewModel = hiltViewModel()
     val ui by settingsViewModel.uiState.collectAsStateWithLifecycle()
-    val mouseEnabled by TvSettings.virtualMouse.collectAsStateWithLifecycle()
     var loginTarget by remember { mutableStateOf<TvLoginTarget?>(null) }
 
     // Tab-entry focus: the first actionable account row grabs focus so the
@@ -214,19 +212,6 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
                         onChange = settingsViewModel::setCrossfadeSeconds,
                     )
                 }
-            }
-
-            item(key = "pointer-header") {
-                TvSettingsSectionTitle(stringResource(R.string.tv_settings_pointer), Icons.Rounded.TouchApp)
-            }
-            item(key = "pointer") {
-                TvSettingsRow(
-                    icon = Icons.Rounded.TouchApp,
-                    title = stringResource(R.string.tv_settings_pointer),
-                    subtitle = stringResource(R.string.tv_settings_pointer_desc),
-                    checked = mouseEnabled,
-                    onToggle = { TvSettings.setVirtualMouse(!mouseEnabled) },
-                )
             }
 
             item(key = "about-header") {
