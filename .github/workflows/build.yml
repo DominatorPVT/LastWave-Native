@@ -20,6 +20,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build APKs (phone + TV)
@@ -159,3 +162,27 @@ jobs:
           name: LastWave-v${{ env.APP_VERSION }}-APKs
           path: final_apk/*
           if-no-files-found: error
+
+      - name: Publish APKs to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${APP_VERSION}"
+          # Same version already released? Swap every asset for the fresh
+          # build — the release always mirrors the latest successful run.
+          OLD_ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if [ -n "$OLD_ASSETS" ]; then
+            while IFS= read -r a; do
+              gh release delete-asset "$TAG" "$a" -y || true
+            done <<< "$OLD_ASSETS"
+          fi
+          if gh release view "$TAG" --json id > /dev/null 2>&1; then
+            gh release upload "$TAG" final_apk/* --clobber
+          else
+            gh release create "$TAG" final_apk/* \
+              --target "$GITHUB_SHA" \
+              --title "LastWave v${APP_VERSION}" \
+              --notes "Automated build of ${GITHUB_SHA::7} (${BUILD_VARIANT} APKs)."
+          fi
+          echo "::notice::Published $TAG ($(ls final_apk | tr '\n' ' '))"
+          gh release view "$TAG" --json assets,url --jq '"Release: " + .url + " assets: " + ([.assets[].name] | join(", "))'
