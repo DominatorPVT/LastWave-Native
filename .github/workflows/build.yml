@@ -95,7 +95,21 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          ./gradlew assemble${BUILD_VARIANT} --stacktrace
+          if ! ./gradlew assemble${BUILD_VARIANT} --stacktrace > phone_build.log 2>&1; then
+            {
+              echo "### Phone build failed — task errors"
+              echo '```'
+              grep -E '^e: |error:|FAILURE:|> Task.*FAILED|Caused by:|Execution failed' phone_build.log | head -50 || true
+              echo '```'
+              echo '<details><summary>Last 80 log lines</summary>'
+              echo ''
+              echo '```'
+              tail -n 80 phone_build.log
+              echo '```'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p final_apk
@@ -111,7 +125,21 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=23 --stacktrace
+          if ! ./gradlew assemble${BUILD_VARIANT} --stacktrace > tv_build.log 2>&1; then
+            {
+              echo "### TV build failed — task errors"
+              echo '```'
+              grep -E '^e: |error:|FAILURE:|> Task.*FAILED|Caused by:|Execution failed' tv_build.log | head -50 || true
+              echo '```'
+              echo '<details><summary>Last 80 log lines</summary>'
+              echo ''
+              echo '```'
+              tail -n 80 tv_build.log
+              echo '```'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p final_apk

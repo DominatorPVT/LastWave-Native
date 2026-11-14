@@ -183,7 +183,8 @@ fun TvLoginScreen(
         }
     }
 
-    // The pointer is permanent inside sign-in pages: it parks at the page
+    // The pointer is permanent inside sign-in pages (see also the summon
+    // effect below): it parks at the page
     // centre the moment the WebView exists, with no first D-pad press needed.
     // The Settings toggle still removes it entirely — then the WebView owns
     // the remote natively and no pointer logic runs.
