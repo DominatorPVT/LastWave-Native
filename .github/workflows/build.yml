@@ -74,96 +74,14 @@ jobs:
             app/build/test-results/testDebugUnitTest/
           if-no-files-found: ignore
 
-      - name: Unseal release signing key (DollBloom lock file)
-        # Runs only when no signing secrets are configured on the repo. The
-        # encrypted keystore lives in the DollBloom repo; the passphrase is
-        # fetched from DollBloom's own workflow at build time — nothing
-        # secret is stored in this repository. The decrypted PKCS#12 is used
-        # directly (AGP reads PKCS#12 stores fine on JDK 9+), so no keytool
-        # conversion is involved. Any failure here degrades gracefully to
-        # debug APKs instead of failing the run.
-        if: env.SIGNING_KEY == '' && env.RELEASE_STORE_PASSWORD == ''
-        run: |
-          set -euo pipefail
-          (
-            DOLLBLOOM_RAW="https://raw.githubusercontent.com/DominatorStufs/DollBloom/master"
-            mkdir -p signing
-            for f in dollbloom_signing.py keycheck.json dollbloom-release.keystore.enc; do
-              curl -fsSL --retry 3 "$DOLLBLOOM_RAW/signing/$f" -o "signing/$f"
-            done
-            # Passphrase lives in DollBloom's own workflow (android.yml builtin).
-            PASSPHRASE=$(curl -fsSL --retry 3 "$DOLLBLOOM_RAW/.github/workflows/android.yml" \
-              | grep -o "vars.DOLLBLOOM_SIGNING_PASSPHRASE || '[^']*'" \
-              | sed "s/^.*|| '//; s/'$//") || true
-            if [ -z "${PASSPHRASE:-}" ]; then
-              echo "::warning::Could not fetch the DollBloom passphrase."
-              exit 3
-            fi
-            export DOLLBLOOM_SIGNING_PASSPHRASE="$PASSPHRASE"
-            # Keep the passphrase out of the printed GITHUB_ENV blocks and
-            # every other log line from here on.
-            echo "::add-mask::$PASSPHRASE"
-            python3 - << 'PYEOF'
-          import sys
-          from pathlib import Path
-          sys.path.insert(0, "signing")
-          import dollbloom_signing as ds
-          root = Path(".")
-          check = ds.load_check(root)
-          args = type("Args", (), {"passphrase_env": "DOLLBLOOM_SIGNING_PASSPHRASE"})()
-          passphrase = ds.resolve_passphrase(args)
-          ds.check_passphrase(passphrase, check)
-          out = Path("signing-unsealed"); out.mkdir(exist_ok=True)
-          p12 = out / "dollbloom-release.p12"
-          p12.write_bytes(ds.decrypt_bytes(ds.read_blob(root), passphrase))
-          (out / "keystore.properties").write_text(
-              "\n".join([
-                  "storeFile=" + str(p12.resolve()),
-                  "storeType=PKCS12",
-                  "storePassword=" + passphrase,
-                  "keyAlias=" + check["key_alias"],
-                  "keyPassword=" + passphrase,
-                  "",
-              ]),
-              encoding="utf-8",
-          )
-          print("Unsealed signing key -> PKCS12 (no keytool involved)")
-          PYEOF
-            test -f signing-unsealed/dollbloom-release.p12 || { echo "::error::Unseal produced no keystore"; exit 3; }
-            # Validate the store with the JDK we already have; broken store ->
-            # debug fallback instead of a half-signed build.
-            keytool -list -keystore signing-unsealed/dollbloom-release.p12 \
-              -storepass "$PASSPHRASE" > /dev/null 2>&1 || {
-              echo "::warning::Unsealed store failed keytool validation."
-              exit 3
-            }
-            ALIAS=$(grep '^keyAlias=' signing-unsealed/keystore.properties | cut -d= -f2)
-            {
-              echo "RELEASE_STORE_FILE=$PWD/signing-unsealed/dollbloom-release.p12"
-              echo "RELEASE_STORE_PASSWORD=$PASSPHRASE"
-              echo "RELEASE_KEY_ALIAS=$ALIAS"
-              echo "RELEASE_KEY_PASSWORD=$PASSPHRASE"
-            } >> local.properties
-            # Also expose as env so build steps can pass them as -P Gradle
-            # properties (the most direct channel — findProperty resolution).
-            {
-              echo "UNSEALED_STORE_FILE=$PWD/signing-unsealed/dollbloom-release.p12"
-              echo "UNSEALED_STORE_PASSWORD=$PASSPHRASE"
-              echo "UNSEALED_KEY_ALIAS=$ALIAS"
-              echo "UNSEALED_KEY_PASSWORD=$PASSPHRASE"
-              echo "UNSEALED_STORE_TYPE=PKCS12"
-            } >> "$GITHUB_ENV"
-            echo "::notice::Release key unsealed from the DollBloom lock file (alias $ALIAS) — signed builds enabled."
-          ) || echo "::warning::Signing key unavailable — falling back to DEBUG APKs (still fully installable)."
-
       - name: Choose build variant
         run: |
-          if grep -q "^RELEASE_STORE_FILE=" local.properties 2>/dev/null; then
+          if [ -n "${SIGNING_KEY:-}" ] || [ -n "${RELEASE_STORE_PASSWORD:-}" ]; then
             echo "BUILD_VARIANT=release" >> "$GITHUB_ENV"
-            echo "Building SIGNED release APKs."
+            echo "Building SIGNED release APKs (signing secrets configured)."
           else
             echo "BUILD_VARIANT=debug" >> "$GITHUB_ENV"
-            echo "::notice::Building DEBUG APKs (signing key unavailable)."
+            echo "::notice::Building DEBUG APKs (no signing secrets configured)."
           fi
 
       - name: Build Phone APK
@@ -177,12 +95,7 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          SIGNING_ARGS=""
-          if [ -n "${UNSEALED_STORE_FILE:-}" ]; then
-            SIGNING_ARGS="-PRELEASE_STORE_FILE=$UNSEALED_STORE_FILE -PRELEASE_STORE_PASSWORD=$UNSEALED_STORE_PASSWORD -PRELEASE_KEY_ALIAS=$UNSEALED_KEY_ALIAS -PRELEASE_KEY_PASSWORD=$UNSEALED_KEY_PASSWORD -PRELEASE_STORE_TYPE=$UNSEALED_STORE_TYPE"
-            echo "Passing unsealed DollBloom signing key to Gradle."
-          fi
-          ./gradlew assemble${BUILD_VARIANT} $SIGNING_ARGS --stacktrace
+          ./gradlew assemble${BUILD_VARIANT} --stacktrace
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p final_apk
@@ -198,11 +111,7 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || '' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          SIGNING_ARGS=""
-          if [ -n "${UNSEALED_STORE_FILE:-}" ]; then
-            SIGNING_ARGS="-PRELEASE_STORE_FILE=$UNSEALED_STORE_FILE -PRELEASE_STORE_PASSWORD=$UNSEALED_STORE_PASSWORD -PRELEASE_KEY_ALIAS=$UNSEALED_KEY_ALIAS -PRELEASE_KEY_PASSWORD=$UNSEALED_KEY_PASSWORD -PRELEASE_STORE_TYPE=$UNSEALED_STORE_TYPE"
-          fi
-          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=23 $SIGNING_ARGS --stacktrace
+          ./gradlew assemble${BUILD_VARIANT} -PtvApp=true -PminSdk=23 --stacktrace
           VERSION=$(grep 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p final_apk
@@ -231,7 +140,3 @@ jobs:
           name: LastWave-v${{ env.APP_VERSION }}-APKs
           path: final_apk/*
           if-no-files-found: error
-
-      - name: Remove unsealed key material
-        if: always()
-        run: rm -rf signing signing-unsealed
