@@ -1,36 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
-=======
-## [5.2.1] - 2026-11-13
-
-### ✨ What's New
-
-* **Downloads in Library:** Find your saved music and download count directly in **Library**.
-
----
-
-### ⚡ Improved
-
-* **Queue & Navigation Motion:** Smoother drag reordering and release, with swipe-to-remove and undo. Navigation and the mini player now collapse together while scrolling, with matching glass styling.
-* **Quality Switching & Wavy Seekbar:** More reliable selected-quality startup, preloading and Bit-Perfect transitions. Restored the lighter wavy seekbar in player and lyrics views (**Experimental; off by default**).
-
----
-
-### 🛠️ Fixed
-
-* **Downloads & 59-Second Stops:** Restored YouTube downloads, improved interrupted-download recovery, and corrected stream selection behind premature playback stops.
-* **Addon Playback & Offline Audio:** Prevented upgrades to a different recording or language. Corrected Atmos download labels and restored seeking/duration for newly downloaded FLAC tracks.
-* **Local Library:** Folder scans now follow your selected locations, remove out-of-scope entries and filter recordings while retaining likes and playlists.
-* **Likes, Playlists & Mixes:** Fixed guest/YouTube like sync, restored notification like/shuffle controls, corrected playlist sorting/counts, and made Start Mix update the queue correctly.
-* **Player, Lyrics & Appearance:** Fixed black screens when reopening the player mid-close, cleaned malformed fallback lyrics, and corrected artwork colours, widget layouts and header seams.
-* **Audio & Playback Crashes:** Fixed Parametric EQ and BotGuard crashes, and restored external Dolby/EQ session support.
-* **Listen Together:** Updated Jam server and invitation links. Also refreshed Italian translations.
-
-> [!NOTE]
-> Previously affected FLAC downloads need to be downloaded again to gain the seeking fix.
-
->>>>>>> origin/main
 ## [5.2.1] - 2026-11-13
 
 ### ✨ What's New
@@ -92,7 +61,6 @@
 ## [Unreleased]
 
 ### Added & Improved
-<<<<<<< HEAD
 - **Android TV (Leanback) Support:** LastWave now runs natively on Android TV, Google TV and Fire TV from the same APK. A dedicated D-pad home (Now Playing hero, top tracks and recently played from your listening history, remote-keyboard search) launches from the TV home screen, driven by the same process-wide MusicPlayer — queue, radio and the media session behave exactly as on phone. The phone launcher is untouched and the TV activity is declared separately, so phones list only the touch UI.
 - **Recommendation Provider Switch:** Settings → Spotify now offers a recommendation provider choice. Pick Spotify to seed Home shelves, Quick Picks, radio, Discover and mixes from your Spotify taste; the switch applies everywhere and invalidates the cached home feed. Spotify only supplies the seeds — tracks are matched back to playable YouTube Music, and any failure or empty answer silently keeps the YouTube Music graph, so playback never breaks.
 
@@ -104,10 +72,6 @@
 - **Virtual Pointer on Sign-In Pages:** The virtual mouse pointer is now always on in sign-in pages — parked at the centre the moment a page opens, no first D-pad press needed. The pointer options were removed from the setup wizard and TV Settings.
 - **Setup Welcome Logo:** The setup screen now shows the original LastWave mark — the dark bars on the logo's lime disc — instead of the barely visible dark-on-dark bars.
 
-=======
-- **Recommendation Provider Switch:** Settings → Spotify now offers a recommendation provider choice. Pick Spotify to seed Home shelves, Quick Picks, radio, Discover and mixes from your Spotify taste; the switch applies everywhere and invalidates the cached home feed. Spotify only supplies the seeds — tracks are matched back to playable YouTube Music, and any failure or empty answer silently keeps the YouTube Music graph, so playback never breaks.
-
->>>>>>> origin/main
 ## [5.0.0] - 2026-10-30
 
 ### Added & Improved
