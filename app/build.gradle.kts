@@ -264,8 +264,8 @@ android {
         buildConfigField("boolean", "TV_APP", tvApp.toString())
         minSdk = (project.findProperty("minSdk") as? String)?.toIntOrNull() ?: 29
         targetSdk = 35
-        versionCode = 32
-        versionName = "5.2.0"
+        versionCode = 33
+        versionName = "5.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         (project.findProperty("targetAbis") as? String)?.let { prop ->
