@@ -2,10 +2,11 @@
 # ============================================================================
 #  LastWave — Android TV Code Uploader (Termux Script)
 # ============================================================================
-#  Ye script LastWave ke TV support wale code (17 files) ko extract karke
-#  tumhare GitHub repo mein push kar deti hai. Sab kuch automatic:
+#  Ye script LastWave ke TV support wale code ko tumhare GitHub repo mein
+#  push kar deti hai. Sab kuch automatic:
 #    1. Code /storage/emulated/0/xxxtermuxxd/lastwave se lega
-#       (agar wahan code nahi mila to zip khud download karke extract karega)
+#       (wahan LastWave-TV-files.zip khud extract karna hoga — ye script
+#        khud kuch download NAHI karti)
 #    2. Tumhare repo ka fresh clone banayega
 #    3. TV code ko uske upar overlay karega
 #    4. Commit karke push kar dega
@@ -33,9 +34,6 @@ BRANCH="main"
 
 # Jahan tumne zip extract kiya hai (ya extract hoga):
 SOURCE_DIR="/storage/emulated/0/xxxtermuxxd/lastwave"
-
-# TV code zip (agar folder khali mile to script khud yahan se download karega):
-ZIP_URL="https://github.com/DominatorPVT/LastWave-Native/raw/arena/ec9626f2-lastwave-native/LastWave-TV-files.zip"
 
 # Commit ki identity (khali chhoda to default use hoga):
 GIT_NAME=""
@@ -78,12 +76,11 @@ say "Dependencies check kar raha hu..."
 MISSING=""
 command -v git   >/dev/null 2>&1 || MISSING="$MISSING git"
 command -v curl  >/dev/null 2>&1 || MISSING="$MISSING curl"
-command -v unzip >/dev/null 2>&1 || MISSING="$MISSING unzip"
 if [ -n "$MISSING" ]; then
     warn "Ye packages missing hain: $MISSING — install kar raha hu..."
     pkg install -y $MISSING || die "pkg install fail hua. Manually chalao: pkg install $MISSING"
 fi
-ok "git, curl, unzip sab ready"
+ok "git, curl sab ready"
 
 # ---- 3. Token verify + push permission --------------------------------------
 say "Token verify kar raha hu (repo: $REPO)..."
@@ -102,51 +99,38 @@ if [ -d "/storage/emulated/0" ] && [ ! -w "/storage/emulated/0" ]; then
     die "Storage permission ke baad script dobara run karo."
 fi
 
-# ---- 5. Source code nikalo --------------------------------------------------
+# ---- 5. Source code nikalo (sirf local — kuch bhi download nahi hota) -------
 say "TV code dhoond raha hu: $SOURCE_DIR"
 
+if [ ! -d "$SOURCE_DIR" ]; then
+    die "Folder hi nahi mila: $SOURCE_DIR
+  Pehle banao aur wahan LastWave-TV-files.zip extract kardo, phir
+  script dobara chalao. Ye script khud kuch download nahi karti."
+fi
+
 resolve_source() {
-    # (a) Direct folder
+    # (a) Zip seedha isi folder mein extract hua
     if [ -f "$SOURCE_DIR/app/build.gradle.kts" ]; then
         SRC="$SOURCE_DIR"; return 0
     fi
-    # (b) Extract hone ke baad ek andar wale folder mein ho sakta hai
+    # (b) Ek andar wale folder mein (zip ne apna folder bana diya)
     for sub in "$SOURCE_DIR"/*/; do
         [ -f "$sub/app/build.gradle.kts" ] && SRC="${sub%/}" && return 0
     done
     return 1
 }
 
-# Pehle GitHub se FRESH zip try karo — taaki purane extract kiye folder pe
-# depend na karna pade (main zip update karta rahunga, script same rahegi).
-mkdir -p "$SOURCE_DIR" || die "Folder nahi bana paaya: $SOURCE_DIR"
-FRESH_DIR="$SOURCE_DIR/.fresh-tv-code"
-rm -rf "$FRESH_DIR"; mkdir -p "$FRESH_DIR"
-ZIP_PATH="$FRESH_DIR/LastWave-TV-files.zip"
-say "Fresh zip download kar raha hu (GitHub se latest)..."
-if curl -fL --retry 3 -o "$ZIP_PATH" "$ZIP_URL"; then
-    ZIP_BYTES=$(wc -c < "$ZIP_PATH")
-    if [ "$ZIP_BYTES" -ge 100000 ]; then
-        ok "Fresh zip mil gayi ($(( ZIP_BYTES / 1024 )) KB) — extract kar raha hu..."
-        unzip -oq "$ZIP_PATH" -d "$FRESH_DIR" || die "Unzip fail hua."
-        rm -f "$ZIP_PATH"
-        SRC="$FRESH_DIR"
-    else
-        warn "Downloaded zip chhoti thi ($ZIP_BYTES bytes) — local folder pe fallback."
-        SRC=""
-    fi
+if resolve_source; then
+    ok "Code mil gaya: $SRC"
 else
-    warn "Download fail hua — local extracted folder pe fallback."
-    SRC=""
-fi
-
-# Fallback: local folder (direct ya ek level andar)
-if [ -z "$SRC" ]; then
-    if resolve_source; then
-        ok "Local code use kar raha hu: $SRC"
-    else
-        die "Na fresh zip mili na valid local code. Internet check karo ya $SOURCE_DIR mein zip manually extract karo."
-    fi
+    die "Code $SOURCE_DIR mein nahi mila (app/build.gradle.kts nahi diya).
+  Aise rakho:
+    1. LastWave-TV-files.zip ko wahan copy karo
+    2. cd $SOURCE_DIR
+    3. unzip -o LastWave-TV-files.zip
+  (app/ aur .github/ folder wahan dikhne chahiye), phir script dobara
+  chalao. Script khud kuch download nahi karti — zip pehle se phone par
+  honi chahiye."
 fi
 
 # ---- 6. Repo clone ----------------------------------------------------------
