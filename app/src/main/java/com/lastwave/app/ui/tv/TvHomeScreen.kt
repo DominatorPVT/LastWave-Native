@@ -629,8 +629,8 @@ private fun TvArtworkBackdrop(
                     center = center,
                 )
             }
-            blob(tint.copy(alpha = 0.10f), Offset(0.10f, 0.52f), 0.85f)
-            blob(tint.copy(alpha = 0.07f), Offset(0.95f, 0.80f), 0.95f)
+            blob(tint.copy(alpha = 0.07f), Offset(0.10f, 0.52f), 0.85f)
+            blob(tint.copy(alpha = 0.05f), Offset(0.95f, 0.80f), 0.95f)
         }
         // Dissolve the blurred art (and tint) into the page colour.
         Box(
@@ -638,10 +638,10 @@ private fun TvArtworkBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to tint.copy(alpha = 0.24f),
-                        0.22f to tint.copy(alpha = 0.34f),
-                        0.50f to tint.copy(alpha = 0.55f),
-                        0.72f to background,
+                        0f to tint.copy(alpha = 0.14f),
+                        0.22f to tint.copy(alpha = 0.20f),
+                        0.50f to tint.copy(alpha = 0.34f),
+                        0.58f to background,
                     ),
                 ),
         )
@@ -771,14 +771,14 @@ private fun TvNowPlayingHero(
     // Static-artwork tracks (no Canvas) get a slightly stronger glow —
     // there is more empty panel for the album color to fill.
     val heroWash = when {
-        !heroActive -> 0.10f
-        canvas != null -> 0.22f
-        else -> 0.28f
+        !heroActive -> 0.08f
+        canvas != null -> 0.14f
+        else -> 0.16f
     }
     val heroHalo = when {
-        !heroActive -> 0.12f
-        canvas != null -> 0.32f
-        else -> 0.38f
+        !heroActive -> 0.10f
+        canvas != null -> 0.20f
+        else -> 0.24f
     }
     val ambient by animateColorAsState(
         targetValue = ambientBase,
@@ -786,7 +786,16 @@ private fun TvNowPlayingHero(
         label = "tvHeroAmbient",
     )
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    // Spotify-TV hero: the whole panel is one dark frosted card, so the
+    // artwork wash stays background and every word/control reads cleanly.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(28.dp))
+            .padding(horizontal = 32.dp, vertical = 26.dp),
+    ) {
         // Ambient wash behind the whole hero panel, tinted by the artwork.
         Box(
             modifier = Modifier
@@ -1098,7 +1107,7 @@ private fun TvHeroProgressBlock(viewModel: TvHomeViewModel) {
                 .fillMaxWidth()
                 .height(barHeight)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                .background(Color.White.copy(alpha = 0.25f)),
         )
         Box(
             modifier = Modifier
@@ -1130,12 +1139,12 @@ private fun TvHeroProgressBlock(viewModel: TvHomeViewModel) {
         Text(
             text = DateUtils.formatElapsedTime(progress.positionMs / 1000),
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
         )
         Text(
             text = DateUtils.formatElapsedTime(progress.durationMs / 1000),
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
         )
     }
 }
@@ -1149,7 +1158,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
         targetValue = if (isFocused) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            Color.White.copy(alpha = 0.10f)
         },
         animationSpec = tween(durationMillis = 160),
         label = "tvHeroDiscColor",
@@ -1197,7 +1206,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
         targetValue = if (isFocused) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            Color.White.copy(alpha = 0.10f)
         },
         animationSpec = tween(durationMillis = 160),
         label = "tvHeroDiscColor",
@@ -1255,6 +1264,7 @@ private fun TvTransportButton(
     val transportBackground by animateColorAsState(
         targetValue = when {
             isFocused && containerColor == Color.Transparent -> MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor == Color.Transparent -> Color.White.copy(alpha = 0.10f)
             else -> containerColor
         },
         animationSpec = tween(durationMillis = 150),
@@ -1753,7 +1763,7 @@ private fun TvMiniProgress(viewModel: TvHomeViewModel) {
                 .weight(1f)
                 .height(3.dp)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                .background(Color.White.copy(alpha = 0.25f)),
         ) {
             Box(
                 modifier = Modifier
