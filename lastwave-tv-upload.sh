@@ -156,7 +156,7 @@ WORK="$TMPDIR_WORK/repo"
 git clone --depth=1 "https://github.com/$REPO.git" "$WORK" -b "$BRANCH" \
     || die "Clone fail hua. Repo/branch naam check karo ($REPO@$BRANCH)."
 OLD_SHA=$(git -C "$WORK" rev-parse HEAD)
-ok "Clone ho gaya (pehle wala commit: ${OLD_SHA:0:7})"
+ok "Clone ho gaya (pehle wala commit: $(printf '%.7s' "$OLD_SHA"))"
 
 # ---- 7. Overlay -------------------------------------------------------------
 say "TV code repo ke upar copy kar raha hu..."
@@ -200,7 +200,7 @@ if git -C "$WORK" push $PUSH_ARGS origin "$BRANCH" 2>"$TMPDIR_WORK/push.log"; th
     printf "${GREEN}=====================================================${NC}\n"
     echo "  Repo    : https://github.com/$REPO"
     echo "  Branch  : $BRANCH"
-    echo "  Commit  : https://github.com/$REPO/commit/${NEW_SHA:0:7}"
+    echo "  Commit  : https://github.com/$REPO/commit/$(printf '%.7s' "$NEW_SHA")"
     echo "  Pehle   : $OLD_SHA"
     echo ""
     echo "  Next: GitHub -> Actions -> Build LastWave APK -> Run workflow"
