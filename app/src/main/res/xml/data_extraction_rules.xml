@@ -2,8 +2,18 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="downloads_restore_prefs.xml" />
+    <!-- Auth material never leaves the device: the main prefs store holds
+         the Spotify sp_dc session, and app_webview holds the YouTube
+         session cookies (SID/SAPISID). -->
+    <exclude domain="file" path="datastore/lastwave_prefs.preferences_pb" />
+    <exclude domain="file" path="app_webview/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="downloads_restore_prefs.xml" />
+    <!-- Auth material never leaves the device: the main prefs store holds
+         the Spotify sp_dc session, and app_webview holds the YouTube
+         session cookies (SID/SAPISID). -->
+    <exclude domain="file" path="datastore/lastwave_prefs.preferences_pb" />
+    <exclude domain="file" path="app_webview/" />
     </device-transfer>
 </data-extraction-rules>

@@ -353,8 +353,11 @@ fun TvLoginScreen(
                             // TV rendering: full desktop layout scaled to fit.
                             settings.useWideViewPort = true
                             settings.loadWithOverviewMode = true
+                            // Login pages (Google/Spotify) are fully HTTPS;
+                            // never let a hostile network inject cleartext
+                            // subresources into a credential page.
                             settings.mixedContentMode =
-                                android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                             overScrollMode = android.view.View.OVER_SCROLL_NEVER
                             settings.setSupportMultipleWindows(false)
                             // The cursor tap needs the WebView to hold focus
