@@ -292,14 +292,14 @@ fun PlaylistScreen(
                     ),
                     modifier = Modifier
                         .weight(1f)
-                        .height(52.dp),
+                        .heightIn(min = 52.dp),
                 )
 
                 FilledTonalButton(
                     onClick = onOpenGenerator,
                     shape = RoundedCornerShape(16.dp),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    modifier = Modifier.height(52.dp),
+                    modifier = Modifier.heightIn(min = 52.dp),
                 ) {
                     Icon(
                         Icons.Filled.AutoAwesome,
@@ -675,7 +675,7 @@ fun PlaylistScreen(
     menuTarget?.let { (playlistId, track) ->
         TrackContextMenuSheet(
             target = TrackMenuTarget.Track(track.name, track.artist, track.url),
-            capabilities = TrackMenuCapabilities(showCopyActions = true, showDeleteScrobble = true),
+            capabilities = TrackMenuCapabilities(showDeleteScrobble = true),
             playbackSourceLabel = state.playlists.firstOrNull { it.id == playlistId }?.title ?: "Playlists",
             onDismiss = { menuTarget = null },
             onDeleteScrobble = { name, artist -> viewModel.deleteScrobble(name, artist) },

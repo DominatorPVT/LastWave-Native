@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Mic
 import com.lastwave.app.data.music.toYouTubeMusicTrack
+import com.lastwave.app.data.generate.youtubeVideoIdOrNull
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.PushPin
@@ -92,6 +94,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -152,10 +155,8 @@ import com.lastwave.app.data.local.DEFAULT_SECTION_ORDER
 import com.lastwave.app.data.model.FriendEntry
 import com.lastwave.app.data.model.RecentTrack
 import com.lastwave.app.data.music.YouTubeMusicTrack
-import com.lastwave.app.data.music.YouTubePlaylistSummary
 import com.lastwave.app.data.music.HomeChip
 import com.lastwave.app.data.music.HomeShelf
-import com.lastwave.app.data.music.HomeShelfItem
 import com.lastwave.app.playback.PlayableTrack
 import com.lastwave.app.ui.common.ArtworkImage
 import com.lastwave.app.ui.common.ExpressiveHeader
@@ -177,6 +178,16 @@ import com.lastwave.app.ui.player.PlayingWaveBars
 import com.lastwave.app.ui.shell.FloatingNavDefaults
 import com.lastwave.app.ui.podcast.PodcastShowRow
 
+private fun LazyListScope.feedSectionItem(
+    key: Any,
+    contentType: Any?,
+    content: @Composable LazyItemScope.() -> Unit,
+) {
+    item(key = key, contentType = contentType) {
+        Box(Modifier.fillMaxWidth()) { content() }
+    }
+}
+
 
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -185,6 +196,7 @@ fun FeedScreen(
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenDiscover: () -> Unit,
+    onOpenGenres: () -> Unit = {},
     onOpenFeedPlaylist: (String) -> Unit,
     onOpenPlaylist: (Long) -> Unit = {},
     onOpenGenerator: () -> Unit = {},
@@ -227,17 +239,10 @@ fun FeedScreen(
     var sectionMenuTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val podcastsEnabled by viewModel.podcastsEnabled.collectAsStateWithLifecycle()
     val topGenres by viewModel.topGenres.collectAsStateWithLifecycle()
+    val previewQueues by viewModel.previewQueues.collectAsStateWithLifecycle()
     fun isSectionVisible(section: HomeSection) = section.id !in hiddenSections
     val snackbarHostState = remember { SnackbarHostState() }
-    val hasFeedContent = state.isChipActive || with(state.feedData) {
-        nativeShelves.any { it.items.isNotEmpty() } ||
-            quickTiles.isNotEmpty() || mixes.isNotEmpty() || topArtists.isNotEmpty() ||
-            quickPicks.isNotEmpty() || jumpBackIn.isNotEmpty() || recentAlbums.isNotEmpty() ||
-            heavyRotation.isNotEmpty() || ytLikedSongs.isNotEmpty() || ytRecentSongs.isNotEmpty() ||
-            (becauseYouListenTo?.items?.isNotEmpty() == true) || freshFinds.isNotEmpty() ||
-            spotlight != null || charts.isNotEmpty() || newReleases.isNotEmpty() || friends.isNotEmpty() ||
-            podcastShows.isNotEmpty()
-    }
+    val hasFeedContent = state.isChipActive || state.feedData.hasContent
     val showSynthetic = !state.isChipActive
     val listState = rememberLazyListState()
     var lastFeedTapMillis by remember { mutableLongStateOf(0L) }
@@ -297,7 +302,7 @@ fun FeedScreen(
             total > 0 && last >= total - 3
         }
     }
-    LaunchedEffect(shouldLoadMore, state.pagedShelves.size, state.chipShelves.size) {
+    LaunchedEffect(shouldLoadMore, state.pagedShelves.size, state.chipShelves.size, state.isChipActive) {
         if (shouldLoadMore && !state.isLoading && !state.isLoadingMore && !state.isRefreshing && !state.isChipLoading) {
             viewModel.loadMoreHomeShelves()
         }
@@ -375,13 +380,13 @@ fun FeedScreen(
                 .adaptiveContentWidth(maxWidth = 920.dp),
         ) {
             PullToRefreshBox(
-                isRefreshing = state.isRefreshing,
+                isRefreshing = state.isRefreshIndicatorVisible,
                 onRefresh = viewModel::refresh,
                 state = pullState,
                 indicator = {
                     androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(
                         state = pullState,
-                        isRefreshing = state.isRefreshing,
+                        isRefreshing = state.isRefreshIndicatorVisible,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .padding(top = listTopInset),
@@ -524,20 +529,7 @@ fun FeedScreen(
                     }
                 }
                 val combinedNewReleases = remember(state.feedData.newReleases, ytNewReleasesShelf) {
-                    val fromYt = ytNewReleasesShelf?.items?.mapNotNull { item ->
-                        when (item) {
-                            is HomeShelfItem.Playlist -> item.playlist
-                            is HomeShelfItem.Track -> YouTubePlaylistSummary(
-                                id = item.track.videoId,
-                                title = item.track.title,
-                                author = item.track.artist,
-                                trackCountText = null,
-                                artworkUrl = item.track.artworkUrl,
-                            )
-                            else -> null
-                        }
-                    }.orEmpty()
-                    (state.feedData.newReleases + fromYt).distinctBy { it.id.ifBlank { it.title } }
+                    feedNewReleases(state.feedData)
                 }
 
                 val ytQuickPicksShelf = remember(state.feedData.nativeShelves) {
@@ -546,8 +538,14 @@ fun FeedScreen(
                     }
                 }
                 val combinedQuickPicks = remember(state.feedData.quickPicks, ytQuickPicksShelf) {
-                    val fromYt = ytQuickPicksShelf?.items?.filterIsInstance<HomeShelfItem.Track>()?.map { it.track }.orEmpty()
-                    (state.feedData.quickPicks + fromYt).distinctBy { it.videoId.ifBlank { it.title } }
+                    feedQuickPicks(state.feedData)
+                }
+                val completedFeed = if (state.isFeedUpdating) null else state.lastCompletedFeed
+                val currentQuickPicks = remember(completedFeed, combinedQuickPicks) {
+                    completedFeed?.let(::feedQuickPicks) ?: combinedQuickPicks
+                }
+                val currentNewReleases = remember(completedFeed, combinedNewReleases) {
+                    completedFeed?.let(::feedNewReleases) ?: combinedNewReleases
                 }
 
                 val remainingNativeShelves = remember(state.feedData.nativeShelves, ytNewReleasesShelf, ytQuickPicksShelf, allHiddenIds, ytHidden) {
@@ -601,12 +599,19 @@ fun FeedScreen(
                         }
                     }
                 }
+                var hasShownDiscovery by remember(state.feedData.userName, state.feedData.ytAccountName, state.feedData.isYtConnected) {
+                    mutableStateOf(false)
+                }
+                if (discoveryTracks.isNotEmpty() && !hasShownDiscovery) {
+                    SideEffect { hasShownDiscovery = true }
+                }
 
                 val isSectionAvailable: (String) -> Boolean = { key ->
                     when {
                         key == "hero_greeting" || key == "infinite_radio" || key == "quick_tiles" -> false
                         key == "taste_strip" -> showSynthetic && displayTags.isNotEmpty()
-                        key == "discover_new_music" -> showSynthetic && discoveryTracks.isNotEmpty()
+                        key == "discover_new_music" -> showSynthetic && (discoveryTracks.isNotEmpty() || hasShownDiscovery)
+                        key == "preview_queues" -> showSynthetic && previewQueues.isNotEmpty()
                         key == "quick_picks" -> showSynthetic && combinedQuickPicks.isNotEmpty()
                         key == "because_you_listen_to" -> showSynthetic && state.feedData.becauseYouListenTo?.items?.isNotEmpty() == true
                         key == "fresh_finds" -> showSynthetic && state.feedData.freshFinds.isNotEmpty()
@@ -626,14 +631,17 @@ fun FeedScreen(
                     }
                 }
 
+                // Sections render the moment their data lands, in their configured
+                // order. Holding them until the whole feed finished kept everything
+                // below My genres behind a spinner for the slowest fetch (10 s+).
                 val (orderedFeedSections, ytShelfBySectionKey) = remember(
                     showSynthetic, allHiddenIds, pinnedHomeSections, homeSectionsOrder,
-                    quickTiles, podcastsEnabled, state.feedData.podcastShows, displayTags,
-                    combinedQuickPicks, discoveryTracks, state.feedData.becauseYouListenTo,
+                    quickTiles, podcastsEnabled, state.feedData.podcastShows, displayTags, previewQueues,
+                    combinedQuickPicks, discoveryTracks, hasShownDiscovery, state.feedData.becauseYouListenTo,
                     state.feedData.freshFinds, state.feedData.jumpBackIn, state.feedData.mixes,
                     individualTopArtists, state.feedData.heavyRotation, state.feedData.recentAlbums,
                     state.feedData.charts, combinedNewReleases, state.feedData.friends,
-                    remainingNativeShelves, resolveNativeShelf, state.feedData.spotlight
+                    remainingNativeShelves, resolveNativeShelf, state.feedData.spotlight,
                 ) {
                     if (state.isChipActive) return@remember emptyList<String>() to emptyMap<String, HomeShelf>()
 
@@ -643,13 +651,12 @@ fun FeedScreen(
                         if (key in ytResolved) ytResolved[key] else resolveNativeShelf(key).also { ytResolved[key] = it }
 
                     val allCandidateKeys = (DEFAULT_SECTION_ORDER + homeSectionsOrder + remainingShelfKeys).distinct()
-                    val activeKeys = allCandidateKeys.filter { key ->
+                    val candidateKeys = allCandidateKeys.filter { key ->
                         key != "hero_greeting" && key != "infinite_radio" && key != "quick_tiles" &&
-                            !isSectionIdHidden(key) &&
-                            (if (key.startsWith("yt:")) ytShelf(key) != null else isSectionAvailable(key))
+                            !isSectionIdHidden(key)
                     }
                     val baseOrder = if (homeSectionsOrder.isNotEmpty()) homeSectionsOrder else DEFAULT_SECTION_ORDER
-                    val sorted = activeKeys.sortedWith(compareBy { key ->
+                    val sorted = candidateKeys.sortedWith(compareBy { key ->
                         val exact = baseOrder.indexOf(key)
                         if (exact >= 0) exact else {
                             val ytIdx = baseOrder.indexOfFirst { bo ->
@@ -662,6 +669,9 @@ fun FeedScreen(
                     })
                     val (pinned, unpinned) = sorted.partition { it in pinnedHomeSections }
                     val ordered = pinned + unpinned
+                    val available = ordered.filter { key ->
+                        if (key.startsWith("yt:")) ytShelf(key) != null else isSectionAvailable(key)
+                    }
 
                     // Two keys can point at the same shelf (old saved key vs live title,
                     // different case, fuzzy match). Keep one per shelf, exact title first.
@@ -669,7 +679,7 @@ fun FeedScreen(
                     fun isExactKey(key: String, shelf: HomeShelf) =
                         key.removePrefix("yt:").trim().lowercase() == shelf.title.trim().lowercase()
                     val winnerByShelf = HashMap<String, String>()
-                    for (key in ordered) {
+                    for (key in available) {
                         if (!key.startsWith("yt:")) continue
                         val shelf = ytShelf(key) ?: continue
                         val shelfId = shelf.title.trim().lowercase()
@@ -679,11 +689,11 @@ fun FeedScreen(
                         }
                     }
                     val winners = winnerByShelf.values.toHashSet()
-                    val sections = ordered.filter { key -> !key.startsWith("yt:") || key in winners }
+                    val sections = available.filter { key -> !key.startsWith("yt:") || key in winners }
                     sections to winners.associateWith { key -> ytShelf(key)!! }
                 }
 
-                val visiblePagedShelfKeys = remember(state.pagedShelves, allHiddenIds, ytHidden) {
+                val visiblePagedShelfKeys = remember(state.pagedShelves, allHiddenIds, ytHidden, state.isChipActive) {
                     if (state.isChipActive) emptyList()
                     else {
                         state.pagedShelves.mapIndexedNotNull { shelfIndex, shelf ->
@@ -695,12 +705,17 @@ fun FeedScreen(
                     }
                 }
 
+                val pagedShelvesByKey = remember(state.pagedShelves) {
+                    state.pagedShelves.mapIndexed { index, shelf -> "paged_shelf_${index}_${shelf.title}" to shelf }.toMap()
+                }
                 val allContainerKeys = remember(orderedFeedSections, visiblePagedShelfKeys) {
                     orderedFeedSections + visiblePagedShelfKeys
                 }
 
-                val isInfiniteRadioVisible = showSynthetic && combinedQuickPicks.isNotEmpty()
-                val isQuickTilesVisible = showSynthetic && quickTiles.isNotEmpty()
+                val showInitialPlaceholders = showSynthetic && state.isFeedUpdating && state.feedData.lastUpdatedMillis == 0L
+                val isInfiniteRadioVisible = showSynthetic && (combinedQuickPicks.isNotEmpty() || showInitialPlaceholders)
+                val isQuickTilesVisible = showSynthetic && isSectionVisible(HomeSection.QUICK_TILES) &&
+                    (quickTiles.isNotEmpty() || showInitialPlaceholders)
                 val hasSectionsBelowQuickTiles = allContainerKeys.isNotEmpty()
                 val quickTilesShape = RoundedCornerShape(
                     topStart = if (isInfiniteRadioVisible) 0.dp else 28.dp,
@@ -859,24 +874,30 @@ fun FeedScreen(
                         }
 
                         if (isInfiniteRadioVisible) {
-                            item(key = "infinite_radio", contentType = "infinite_radio") {
-                                InfiniteRadioHero(
-                                    quickPicks = combinedQuickPicks,
-                                    onPlay = viewModel::playInfiniteRadio,
-                                )
+                            feedSectionItem(key = "infinite_radio", contentType = "infinite_radio") {
+                                if (combinedQuickPicks.isEmpty()) {
+                                    InfiniteRadioLoadingSkeleton()
+                                } else {
+                                    InfiniteRadioHero(
+                                        quickPicks = currentQuickPicks,
+                                        onPlay = viewModel::playInfiniteRadio,
+                                    )
+                                }
                             }
                         }
 
                         if (isQuickTilesVisible) {
-                            item(key = "quick_tiles", contentType = "quick_tiles") {
+                            feedSectionItem(key = "quick_tiles", contentType = "quick_tiles") {
                                 HomeContainerSection(
                                     shape = quickTilesShape,
                                 ) {
+                                    val quickAccessTitle = stringResource(R.string.feed_quick_access)
                                     FeedSectionHeader(
-                                        title = stringResource(R.string.feed_quick_access),
+                                        title = quickAccessTitle,
+                                        onLongClick = { sectionMenuTarget = "quick_tiles" to quickAccessTitle },
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    QuickTilesGrid(
+                                    if (quickTiles.isEmpty()) QuickTilesLoadingSkeleton() else QuickTilesGrid(
                                         tiles = quickTiles,
                                         onTileClick = { tile ->
                                             when {
@@ -911,10 +932,31 @@ fun FeedScreen(
                             }
                         }
 
-                        for (sectionKey in orderedFeedSections) {
+                        for (sectionKey in allContainerKeys) {
                             when {
+                                sectionKey.startsWith("paged_shelf_") -> {
+                                    val shelf = pagedShelvesByKey[sectionKey] ?: continue
+                                    feedSectionItem(key = sectionKey, contentType = "shelf") {
+                                        HomeContainerSection(shape = getContainerShape(sectionKey)) {
+                                            HomeShelfCard(
+                                                shelf = shelf,
+                                                onPlayTrack = { track, title -> viewModel.playTrack(track, title) },
+                                                onPlayTracksQueue = { tracks, idx, title -> viewModel.playTracksQueue(tracks, idx, title) },
+                                                onShuffleTracksQueue = { tracks, title -> viewModel.shuffleTracksQueue(tracks, title) },
+                                                onOpenFeedPlaylist = onOpenFeedPlaylist,
+                                                onOpenAlbum = { title, artist, id -> artistAlbumNavigator.openAlbum(title, artist, id) },
+                                                onTrackLongClick = { tray -> miniTrayTrack = tray },
+                                                onPlayPlaylist = viewModel::playPlaylistSummary,
+                                                onTrackMenu = { menuTrack = it },
+                                                onOpenPodcastShow = onOpenPodcastShow,
+                                                onPlayPodcastEpisode = { ep, q, title -> viewModel.playPodcastEpisode(ep, q, title) },
+                                                onHeaderLongClick = { title -> sectionMenuTarget = "yt:$title" to title },
+                                            )
+                                        }
+                                    }
+                                }
                                 sectionKey == "taste_strip" -> {
-                                    item(key = "taste_strip", contentType = "taste_strip") {
+                                    feedSectionItem(key = "taste_strip", contentType = "taste_strip") {
                                         HomeContainerSection(
                                             shape = getContainerShape("taste_strip"),
                                         ) {
@@ -922,13 +964,14 @@ fun FeedScreen(
                                                 tags = displayTags,
                                                 launching = state.launchingRadio,
                                                 onTagClick = { tag -> viewModel.playDiscoveryQuery(tag.displayName(), tag) },
+                                                onActionClick = onOpenGenres,
                                                 onLongClick = { sectionMenuTarget = "taste_strip" to "My genres" },
                                             )
                                         }
                                     }
                                 }
                                 sectionKey == "discover_new_music" -> {
-                                    item(key = "discover_new_music", contentType = "discover_new_music") {
+                                    feedSectionItem(key = "discover_new_music", contentType = "discover_new_music") {
                                         HomeContainerSection(
                                             shape = getContainerShape("discover_new_music"),
                                         ) {
@@ -938,7 +981,15 @@ fun FeedScreen(
                                                 onActionClick = onOpenDiscover,
                                                 onLongClick = { sectionMenuTarget = "discover_new_music" to "Discover New Music" },
                                             )
-                                            FeedMediaRow(
+                                            if (discoveryTracks.isEmpty()) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                                                        .height(rememberSquareCardWidth() + CardTokens.coverToTextGap + CardTokens.textAreaHeight),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    Text(stringResource(R.string.feed_discover_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            } else FeedMediaRow(
                                                 content = {
                                                     itemsIndexed(discoveryTracks) { index, track ->
                                                         val playable = track.toPlayableTrack()
@@ -952,6 +1003,19 @@ fun FeedScreen(
                                                                 val queue = discoveryTracks.map { it.toPlayableTrack() }
                                                                 musicPlayer.playDiscoverQueue(queue, index)
                                                             },
+                                                            onLongClick = {
+                                                                miniTrayTrack = TrackMiniTrayData(
+                                                                    title = track.name,
+                                                                    artist = track.artist,
+                                                                    artworkUrl = track.artworkUrl,
+                                                                    sourceLabel = "Discover",
+                                                                    videoId = track.youtubeVideoIdOrNull(),
+                                                                    onPlay = {
+                                                                        val queue = discoveryTracks.map { it.toPlayableTrack() }
+                                                                        musicPlayer.playDiscoverQueue(queue, index)
+                                                                    },
+                                                                )
+                                                            },
                                                             onPlayClick = {
                                                                 val queue = discoveryTracks.map { it.toPlayableTrack() }
                                                                 musicPlayer.playDiscoverQueue(queue, index)
@@ -963,9 +1027,42 @@ fun FeedScreen(
                                         }
                                     }
                                 }
+                                sectionKey == "preview_queues" -> {
+                                    feedSectionItem(key = "preview_queues", contentType = "preview_queues") {
+                                        HomeContainerSection(
+                                            shape = getContainerShape("preview_queues"),
+                                        ) {
+                                            FeedSectionHeader(
+                                                title = "Preview Queues",
+                                                subtitle = "Your recent listening sessions",
+                                                onLongClick = { sectionMenuTarget = "preview_queues" to "Preview Queues" },
+                                            )
+                                            FeedMediaRow(
+                                                content = {
+                                                    items(
+                                                        previewQueues,
+                                                        key = { "pq_${it.id}" },
+                                                        contentType = { "preview_queue" },
+                                                    ) { pq ->
+                                                        FeedMediaCard(
+                                                            title = pq.title,
+                                                            subtitle = "${pq.tracks.size} songs",
+                                                            artworkUrl = pq.artworkUrl,
+                                                            fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
+                                                            badgeText = "QUEUE",
+                                                            onClick = { viewModel.playPreviewQueue(pq) },
+                                                            onPlayClick = { viewModel.playPreviewQueue(pq) },
+                                                        )
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                                 sectionKey == "quick_picks" -> {
-                                    item(key = "quick_picks", contentType = "quick_picks") {
-                                        val likelyTracks = combinedQuickPicks.take(2)
+                                    feedSectionItem(key = "quick_picks", contentType = "quick_picks") {
+                                        val sectionTracks = currentQuickPicks
+                                        val likelyTracks = sectionTracks.take(2)
                                         LaunchedEffect(likelyTracks) {
                                             viewModel.warmQuickPicks(likelyTracks)
                                         }
@@ -975,19 +1072,19 @@ fun FeedScreen(
                                             FeedSectionHeader(
                                                 title = stringResource(R.string.feed_quick_picks),
                                                 subtitle = stringResource(R.string.feed_trending_worth),
-                                                onShuffleClick = { viewModel.shuffleTracksQueue(combinedQuickPicks, "Quick Picks") },
+                                                onShuffleClick = { viewModel.shuffleTracksQueue(sectionTracks, "Quick Picks") },
                                                 onLongClick = { sectionMenuTarget = "quick_picks" to "Quick Picks" },
                                             )
                                             QuickPicksRows(
-                                                tracks = combinedQuickPicks,
+                                                tracks = sectionTracks,
                                                 currentPlayingVideoId = playbackState.current?.videoId,
                                                 isPlaying = playbackState.isPlaying,
                                                 onTrackClick = { index ->
-                                                    val track = combinedQuickPicks.getOrNull(index)
+                                                    val track = sectionTracks.getOrNull(index)
                                                     if (track != null) {
                                                         viewModel.playTrack(track, "Quick Picks")
                                                     } else {
-                                                        viewModel.playTracksQueue(combinedQuickPicks, index, "Quick Picks")
+                                                        viewModel.playTracksQueue(sectionTracks, index, "Quick Picks")
                                                     }
                                                 },
                                                 onMenuClick = { menuTrack = it },
@@ -1008,7 +1105,7 @@ fun FeedScreen(
                                 }
                                 sectionKey == "because_you_listen_to" -> {
                                     state.feedData.becauseYouListenTo?.takeIf { it.items.isNotEmpty() }?.let { section ->
-                                        item(key = "because_you_listen_to", contentType = "because_you_listen_to") {
+                                        feedSectionItem(key = "because_you_listen_to", contentType = "because_you_listen_to") {
                                             HomeContainerSection(
                                                 shape = getContainerShape("because_you_listen_to"),
                                             ) {
@@ -1048,7 +1145,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "fresh_finds" -> {
-                                    item(key = "fresh_finds", contentType = "fresh_finds") {
+                                    feedSectionItem(key = "fresh_finds", contentType = "fresh_finds") {
                                         HomeContainerSection(
                                             shape = getContainerShape("fresh_finds"),
                                         ) {
@@ -1088,7 +1185,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "jump_back_in" -> {
-                                    item(key = "jump_back_in", contentType = "jump_back_in") {
+                                    feedSectionItem(key = "jump_back_in", contentType = "jump_back_in") {
                                         HomeContainerSection(
                                             shape = getContainerShape("jump_back_in"),
                                         ) {
@@ -1121,7 +1218,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "mixed_for_you" || sectionKey == "mixes" -> {
-                                    item(key = "mixed_for_you", contentType = "mixed_for_you") {
+                                    feedSectionItem(key = "mixed_for_you", contentType = "mixed_for_you") {
                                         HomeContainerSection(
                                             shape = getContainerShape("mixed_for_you"),
                                         ) {
@@ -1155,7 +1252,7 @@ fun FeedScreen(
                                 }
                                 sectionKey == "spotlight_hero" || sectionKey == "spotlight" -> {
                                     state.feedData.spotlight?.let { spotlight ->
-                                        item(key = "spotlight_hero", contentType = "spotlight_hero") {
+                                        feedSectionItem(key = "spotlight_hero", contentType = "spotlight_hero") {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -1176,7 +1273,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "top_artists" -> {
-                                    item(key = "top_artists", contentType = "top_artists") {
+                                    feedSectionItem(key = "top_artists", contentType = "top_artists") {
                                         HomeContainerSection(
                                             shape = getContainerShape("top_artists"),
                                         ) {
@@ -1207,7 +1304,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "heavy_rotation" -> {
-                                    item(key = "heavy_rotation", contentType = "heavy_rotation") {
+                                    feedSectionItem(key = "heavy_rotation", contentType = "heavy_rotation") {
                                         HomeContainerSection(
                                             shape = getContainerShape("heavy_rotation"),
                                         ) {
@@ -1244,7 +1341,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "albums_in_rotation" || sectionKey == "albums" -> {
-                                    item(key = "albums_in_rotation", contentType = "albums_in_rotation") {
+                                    feedSectionItem(key = "albums_in_rotation", contentType = "albums_in_rotation") {
                                         HomeContainerSection(
                                             shape = getContainerShape("albums_in_rotation"),
                                         ) {
@@ -1280,7 +1377,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "trending_charts" || sectionKey == "charts" -> {
-                                    item(key = "trending_charts", contentType = "trending_charts") {
+                                    feedSectionItem(key = "trending_charts", contentType = "trending_charts") {
                                         HomeContainerSection(
                                             shape = getContainerShape("trending_charts"),
                                         ) {
@@ -1318,7 +1415,8 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "new_releases" -> {
-                                    item(key = "new_releases", contentType = "new_releases") {
+                                    feedSectionItem(key = "new_releases", contentType = "new_releases") {
+                                        val sectionReleases = currentNewReleases
                                         HomeContainerSection(
                                             shape = getContainerShape("new_releases"),
                                         ) {
@@ -1331,7 +1429,7 @@ fun FeedScreen(
                                             FeedMediaRow(
                                                 content = {
                                                     items(
-                                                        combinedNewReleases,
+                                                        sectionReleases,
                                                         key = { "release_${it.id}" },
                                                         contentType = { "new_release" },
                                                     ) { summary ->
@@ -1356,7 +1454,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "friends_activity" || sectionKey == "friends" -> {
-                                    item(key = "friends_activity", contentType = "friends_activity") {
+                                    feedSectionItem(key = "friends_activity", contentType = "friends_activity") {
                                         HomeContainerSection(
                                             shape = getContainerShape("friends_activity"),
                                         ) {
@@ -1388,7 +1486,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "podcast_shelf" || sectionKey == "podcasts" -> {
-                                    item(key = "podcast_shelf", contentType = "podcast_shelf") {
+                                    feedSectionItem(key = "podcast_shelf", contentType = "podcast_shelf") {
                                         HomeContainerSection(
                                             shape = getContainerShape("podcast_shelf"),
                                         ) {
@@ -1428,7 +1526,7 @@ fun FeedScreen(
                                     }
                                 }
                                 sectionKey == "moods_and_genres" -> {
-                                    item(key = "moods_and_genres", contentType = "moods_and_genres") {
+                                    feedSectionItem(key = "moods_and_genres", contentType = "moods_and_genres") {
                                         HomeContainerSection(shape = getContainerShape("moods_and_genres")) {
                                             val moodsTitle = stringResource(R.string.moods_title)
                                             com.lastwave.app.ui.moods.HomeMoodsSection(
@@ -1441,7 +1539,7 @@ fun FeedScreen(
                                     val shelf = ytShelfBySectionKey[sectionKey]
                                     if (shelf != null && shelf.items.isNotEmpty()) {
                                         // unique, orderedFeedSections has one key per shelf
-                                        item(key = "yt_shelf_${shelf.title.trim().lowercase()}", contentType = "shelf") {
+                                        feedSectionItem(key = "yt_shelf_${shelf.title.trim().lowercase()}", contentType = "shelf") {
                                             HomeContainerSection(
                                                 shape = getContainerShape(sectionKey),
                                             ) {
@@ -1505,34 +1603,6 @@ fun FeedScreen(
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                         )
                                     }
-                                }
-                            }
-                        }
-                    }
-
-                    if (!state.isChipActive && hasAnyFeedSections) {
-                        for ((shelfIndex, shelf) in state.pagedShelves.withIndex()) {
-                            val shelfItemKey = "paged_shelf_${shelfIndex}_${shelf.title}"
-                            val pagedKey = "yt:${shelf.title}"
-                            if (shelf.items.isEmpty() || isSectionIdHidden(pagedKey) || isShelfTitleHidden(shelf.title)) continue
-                            item(key = shelfItemKey, contentType = "shelf") {
-                                HomeContainerSection(
-                                    shape = getContainerShape(shelfItemKey),
-                                ) {
-                                    HomeShelfCard(
-                                        shelf = shelf,
-                                        onPlayTrack = { track, title -> viewModel.playTrack(track, title) },
-                                        onPlayTracksQueue = { tracks, idx, title -> viewModel.playTracksQueue(tracks, idx, title) },
-                                        onShuffleTracksQueue = { tracks, title -> viewModel.shuffleTracksQueue(tracks, title) },
-                                        onOpenFeedPlaylist = onOpenFeedPlaylist,
-                                        onOpenAlbum = { title, artist, id -> artistAlbumNavigator.openAlbum(title, artist, id) },
-                                        onTrackLongClick = { tray -> miniTrayTrack = tray },
-                                        onPlayPlaylist = viewModel::playPlaylistSummary,
-                                        onTrackMenu = { menuTrack = it },
-                                        onOpenPodcastShow = onOpenPodcastShow,
-                                        onPlayPodcastEpisode = { ep, q, title -> viewModel.playPodcastEpisode(ep, q, title) },
-                                        onHeaderLongClick = { title -> sectionMenuTarget = "yt:$title" to title },
-                                    )
                                 }
                             }
                         }
@@ -1610,7 +1680,7 @@ fun FeedScreen(
     menuTrack?.let { track ->
         TrackContextMenuSheet(
             target = TrackMenuTarget.Track(track.title, track.artist, ""),
-            capabilities = TrackMenuCapabilities(showCopyActions = false, showDeleteScrobble = false),
+            capabilities = TrackMenuCapabilities(showDeleteScrobble = false),
             playableTrack = PlayableTrack(
                 title = track.title,
                 artist = track.artist,

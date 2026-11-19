@@ -1,9 +1,9 @@
 package com.lastwave.app.ui.player
 
+import com.lastwave.app.data.local.SeekbarStyle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -151,7 +151,6 @@ import com.lastwave.app.data.lyrics.translationWireTarget
 import com.lastwave.app.playback.MusicPlayer
 import com.lastwave.app.playback.MusicPlayerState
 import com.lastwave.app.playback.PlaybackProgressState
-import com.lastwave.app.ui.common.ExpressiveInlineLoadingIndicator
 import com.lastwave.app.ui.common.ExpressiveMotion
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -164,13 +163,16 @@ fun ModernLyricsPanel(
     player: MusicPlayer,
     lyricsState: LyricsUiState,
     progressState: StateFlow<PlaybackProgressState>? = null,
-    wavySeekbarEnabled: Boolean = false,
+    seekbarStyle: SeekbarStyle = SeekbarStyle.DEFAULT,
+    wavySeekbarEnabled: Boolean = (seekbarStyle == SeekbarStyle.WAVY),
     onToggleFullscreen: (() -> Unit)? = null,
     isFullscreen: Boolean = false,
     onRetry: () -> Unit = {},
     onOpenLyricsOffset: (() -> Unit)? = null,
     lyricsFontScale: Float = 1.0f,
     onLyricsFontScaleChange: (Float) -> Unit = {},
+    lyricsStyle: LyricsStyle = LocalLyricsStyleState.current.style,
+    onLyricsStyleChange: (LyricsStyle) -> Unit = LocalLyricsStyleState.current.onStyleChange ?: {},
     modifier: Modifier = Modifier,
     /** Manual sync correction (ms, + = lyrics earlier). Applies to lyric
      *  focus/highlight only â€” the seekbar below keeps true position. */
@@ -190,7 +192,7 @@ fun ModernLyricsPanel(
     onTryAnotherLyricsSource: (() -> Unit)? = null,
     resolvedArtworkUrl: String? = null,
 ) {
-    state.current ?: return
+    val track = state.current ?: return
 
     var showShareDialog by rememberSaveable { mutableStateOf(false) }
     val canShareLyrics = lyricsState is LyricsUiState.Success &&
@@ -391,8 +393,9 @@ fun ModernLyricsPanel(
 
     Column(modifier = modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            AnimatedContent(
-                targetState = lyricsState,
+            LyricsStateContent(
+                lyricsState = lyricsState,
+                signature = rememberLyricsSignature(track, lyricsState, primaryColor),
                 transitionSpec = {
                     (fadeIn(tween(ExpressiveMotion.Quick)) +
                         androidx.compose.animation.scaleIn(ExpressiveMotion.spatialSpring(), initialScale = 0.96f)) togetherWith
@@ -403,34 +406,10 @@ fun ModernLyricsPanel(
                 modifier = Modifier.fillMaxSize(),
             ) { targetState ->
                 when (targetState) {
-                    is LyricsUiState.Loading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                            ) {
-                                ExpressiveInlineLoadingIndicator(
-                                    size = 42.dp,
-                                    strokeWidth = 3.5.dp,
-                                    color = Color.White,
-                                )
-                                Text(
-                                    "Finding lyrics...",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.White.copy(alpha = 0.70f),
-                                )
-                            }
-                        }
-                    }
+                    is LyricsUiState.Loading -> LyricsSignatureStatus(SignatureMode.Loading)
 
                     is LyricsUiState.Empty, is LyricsUiState.Error -> {
-                        ModernEmptyLyricsView(
-                            isInstrumental = false,
-                            onRetry = onRetry,
-                        )
+                        LyricsSignatureStatus(SignatureMode.NotFound, onRetry)
                     }
 
                     is LyricsUiState.Success -> {
@@ -465,26 +444,29 @@ fun ModernLyricsPanel(
                             // whose Bold is a real weight.
                             val useAppFont = MaterialTheme.typography.bodyLarge.fontFamily != androidx.compose.ui.text.font.FontFamily.Default
                             val boldFont = com.lastwave.app.ui.theme.LocalUseBoldFont.current
-                            val karaokeNormalStyle = remember(currentTextStyle, isAppleMusic, isWordSynced, effectiveFontScale, useAppFont, boldFont) {
-                                val baseSize = (if (isAppleMusic) 30f else if (isWordSynced) 34f else 32f) * effectiveFontScale
+                            val themeSpec = remember(lyricsStyle) { lyricsStyle.toThemeSpec() }
+                            val chosenLeadFont = themeSpec.fontFamily ?: if (useAppFont) com.lastwave.app.ui.theme.lyricsLeadFontFamily(boldFont) else androidx.compose.ui.text.font.FontFamily.Default
+                            val chosenBackingFont = themeSpec.fontFamily ?: if (useAppFont) com.lastwave.app.ui.theme.lyricsBackingFontFamily(boldFont) else androidx.compose.ui.text.font.FontFamily.Default
+                            val karaokeNormalStyle = remember(currentTextStyle, isAppleMusic, isWordSynced, effectiveFontScale, useAppFont, boldFont, lyricsStyle) {
+                                val baseSize = (if (isAppleMusic) 30f else if (isWordSynced) 34f else 32f) * effectiveFontScale * themeSpec.fontSizeMultiplier
                                 currentTextStyle.copy(
-                                    fontFamily = if (useAppFont) com.lastwave.app.ui.theme.lyricsLeadFontFamily(boldFont) else androidx.compose.ui.text.font.FontFamily.Default,
+                                    fontFamily = chosenLeadFont,
                                     fontSize = baseSize.sp,
-                                    lineHeight = (baseSize * 1.20f).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = (-0.6).sp,
+                                    lineHeight = (baseSize * themeSpec.lineHeightMultiplier).sp,
+                                    fontWeight = themeSpec.activeFontWeight,
+                                    letterSpacing = themeSpec.letterSpacing ?: (-0.6).sp,
                                     textMotion = TextMotion.Animated,
                                 )
                             }
-                            val karaokeAccompanimentStyle = remember(currentTextStyle, isAppleMusic, isWordSynced, effectiveFontScale, useAppFont, boldFont) {
+                            val karaokeAccompanimentStyle = remember(currentTextStyle, isAppleMusic, isWordSynced, effectiveFontScale, useAppFont, boldFont, lyricsStyle) {
                                 // Backing vocals: 0.65x of the lead row.
-                                val baseSize = (if (isAppleMusic) 30f else if (isWordSynced) 34f else 32f) * 0.65f * effectiveFontScale
+                                val baseSize = (if (isAppleMusic) 30f else if (isWordSynced) 34f else 32f) * 0.65f * effectiveFontScale * themeSpec.fontSizeMultiplier
                                 currentTextStyle.copy(
-                                    fontFamily = if (useAppFont) com.lastwave.app.ui.theme.lyricsBackingFontFamily(boldFont) else androidx.compose.ui.text.font.FontFamily.Default,
+                                    fontFamily = chosenBackingFont,
                                     fontSize = baseSize.sp,
-                                    lineHeight = (baseSize * 1.22f).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = (-0.3).sp,
+                                    lineHeight = (baseSize * themeSpec.lineHeightMultiplier).sp,
+                                    fontWeight = themeSpec.inactiveFontWeight,
+                                    letterSpacing = themeSpec.letterSpacing ?: (-0.3).sp,
                                     textMotion = TextMotion.Animated,
                                 )
                             }
@@ -503,8 +485,8 @@ fun ModernLyricsPanel(
 
                             val layoutDirection = if (isOverallRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
                             // Sync-type badge: makes it visible why words animate
-                            // (word-sync) or just scroll (line-sync). No source
-                            // or provider name is ever shown on the canvas.
+                            // (word-sync) or just scroll (line-sync). The provider
+                            // is credited only on the signature intro card.
                             val wordSyncLabel = stringResource(R.string.ly_word_sync)
                             val lineSyncLabel = stringResource(R.string.ly_line_sync)
                             val syncLabel = if (isWordSynced) wordSyncLabel else lineSyncLabel
@@ -549,6 +531,7 @@ fun ModernLyricsPanel(
                                         state = state,
                                         player = player,
                                         lyricsOffsetMs = lyricsOffsetMs,
+                                        lyricsStyle = lyricsStyle,
                                         modifier = Modifier
                                             .weight(1f)
                                             .fillMaxWidth(),
@@ -562,10 +545,7 @@ fun ModernLyricsPanel(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         } else {
-                            ModernEmptyLyricsView(
-                                isInstrumental = false,
-                                onRetry = onRetry,
-                            )
+                            LyricsSignatureStatus(SignatureMode.NotFound, onRetry)
                         }
                     }
 
@@ -590,7 +570,10 @@ fun ModernLyricsPanel(
             progressFlow = progressFlow,
             progressInitial = progressInitial,
             player = player,
+            seekbarStyle = seekbarStyle,
             wavySeekbarEnabled = wavySeekbarEnabled,
+            lyricsStyle = lyricsStyle,
+            onLyricsStyleChange = onLyricsStyleChange,
             onToggleFullscreen = onToggleFullscreen,
             isFullscreen = isFullscreen,
             lyricsOffsetMs = lyricsOffsetMs,

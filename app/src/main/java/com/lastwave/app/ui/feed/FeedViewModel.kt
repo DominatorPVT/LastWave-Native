@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,11 +48,15 @@ import javax.inject.Inject
 @Immutable
 data class FeedUiState(
     val isLoading: Boolean = true,
+    val isFeedUpdating: Boolean = false,
     val isRefreshing: Boolean = false,
+    val isRefreshIndicatorVisible: Boolean = false,
     val launchingRadio: String? = null,
     val error: String? = null,
     val avatarUrl: String? = null,
     val feedData: FeedData = FeedData(),
+    val lastCompletedFeed: FeedData? = null,
+    val freshPagedShelfTitles: Set<String> = emptySet(),
     val selectedChip: HomeChip? = null,
     val isChipLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
@@ -66,6 +71,12 @@ data class FeedUiState(
     val homeChips: List<HomeChip> get() = feedData.homeChips
 }
 
+// Paging starts with the first shelves, while the rest of the feed is still
+// loading (waiting for all of it left the list ending for 10 s+). Once paging
+// has moved past page 1, a later feed update must not rewind the token.
+private fun FeedUiState.continuationAfterUpdate(fresh: String?): String? =
+    if (pagedShelves.isNotEmpty() && defaultContinuationToken != null) defaultContinuationToken else fresh
+
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
@@ -79,12 +90,31 @@ class FeedViewModel @Inject constructor(
     private val homeRepository: com.lastwave.app.data.repository.HomeRepository,
     private val discoverRepository: com.lastwave.app.data.discover.DiscoverRepository,
     private val genresRepository: com.lastwave.app.data.generate.GenresRepository,
+    private val previewQueueRepository: com.lastwave.app.data.queue.PreviewQueueRepository? = null,
 ) : ViewModel() {
 
+    val previewQueues: StateFlow<List<com.lastwave.app.data.queue.PreviewQueue>> =
+        previewQueueRepository?.previewQueues ?: MutableStateFlow(emptyList())
+
+    fun playPreviewQueue(queue: com.lastwave.app.data.queue.PreviewQueue) {
+        musicPlayer.playQueue(queue.tracks, 0, sourceLabel = queue.title)
+    }
+
+    private val recommendationExclusionKeys = discoverRepository.observeRecommendationExclusions()
+        .map { exclusions -> exclusions.mapTo(mutableSetOf()) { it.trackKey } }
+        .distinctUntilChanged()
+        .shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
     private val _uiState = MutableStateFlow(FeedUiState())
-    val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<FeedUiState> = combine(_uiState, recommendationExclusionKeys) { state, keys ->
+        state.withRecommendationExclusions(keys)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, FeedUiState())
     private val _discoveryTracks = MutableStateFlow<List<GeneratedTrack>>(emptyList())
-    val discoveryTracks: StateFlow<List<GeneratedTrack>> = _discoveryTracks.asStateFlow()
+    val discoveryTracks: StateFlow<List<GeneratedTrack>> = combine(_discoveryTracks, recommendationExclusionKeys) { tracks, keys ->
+        tracks.filterNot { it.key in keys }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val _isDiscoveryLoading = MutableStateFlow(false)
+    val isDiscoveryLoading: StateFlow<Boolean> = _isDiscoveryLoading.asStateFlow()
+    @Volatile private var discoveryGeneration = 0L
 
     private val _topGenres = MutableStateFlow<List<String>>(emptyList())
     val topGenres: StateFlow<List<String>> = _topGenres.asStateFlow()
@@ -154,15 +184,17 @@ class FeedViewModel @Inject constructor(
             ytAuth.awaitLoadedConnection()
             combine(ytAuth.connection, sessionPreferences.session) { connection, session ->
                 connection to session.username
-            }.distinctUntilChanged().collect { (connection, _) ->
+            }.distinctUntilChanged().collect { (connection, username) ->
                 feedJob?.cancel()
-                val cached = repository.getCachedFeed()
+                val cached = repository.getCachedFeed(username.takeIf(String::isNotBlank), connection)
                 _uiState.value = FeedUiState(
                     isLoading = cached == null,
                     feedData = cached ?: FeedData(
                         isYtConnected = connection.isConnected,
                         ytAccountName = connection.accountName.takeIf { connection.isConnected },
                     ),
+                    lastCompletedFeed = cached,
+                    defaultContinuationToken = cached?.homeContinuationToken,
                 )
                 loadFeed()
             }
@@ -176,20 +208,24 @@ class FeedViewModel @Inject constructor(
     }
 
     fun loadDiscovery(forceRotate: Boolean = false) {
+        val generation = ++discoveryGeneration
+        _isDiscoveryLoading.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val cached = discoverRepository.allowedCachedFeed()
                 val tracks = if (forceRotate) {
-                    val batch = discoverRepository.nextBatch(8)
-                    if (batch.isNotEmpty()) batch else cached.shuffled().take(8)
+                    discoverRepository.nextBatch(8)
                 } else if (cached.isNotEmpty()) {
                     cached.take(8)
                 } else {
                     discoverRepository.nextBatch(8)
                 }
-                _discoveryTracks.value = tracks
+                if (discoveryGeneration == generation) _discoveryTracks.value = tracks
             } catch (_: Exception) {
-                // Non-destructive fallback if offline/failed
+                ensureActive()
+                if (discoveryGeneration == generation) _discoveryTracks.value = emptyList()
+            } finally {
+                if (discoveryGeneration == generation) _isDiscoveryLoading.value = false
             }
         }
     }
@@ -215,23 +251,23 @@ class FeedViewModel @Inject constructor(
     }
 
     fun onVisible() {
-        if (feedJob?.isActive == true) return
+        if (feedJob?.isActive == true || _uiState.value.isLoading) return
         // ON_START fires on every return from a pushed screen (artist, album,
         // playlist...). Reloading the whole feed each time kept the tabs in
         // a near-constant loading state and hammered the network — only
         // refresh when there's nothing yet or the data is stale.
-        val hasContent = _uiState.value.feedData.quickPicks.isNotEmpty() ||
-            _uiState.value.feedData.topArtists.isNotEmpty() ||
-            _uiState.value.feedData.newReleases.isNotEmpty()
+        val hasContent = _uiState.value.feedData.hasContent
         val stale = System.currentTimeMillis() - lastLoadedMillis > STALE_AFTER_MILLIS
         if (!hasContent || stale) refresh()
     }
 
     fun playInfiniteRadio() {
-        val feed = _uiState.value.feedData
-        (feed.quickPicks + feed.ytLikedSongs + feed.freshFinds).randomOrNull()?.let {
-            playTrack(it, "Infinite Radio")
-        }
+        val state = uiState.value
+        val feed = if (state.isFeedUpdating) state.feedData else state.lastCompletedFeed ?: state.feedData
+        val excluded = recommendationExclusionKeys.replayCache.lastOrNull().orEmpty()
+        (feedQuickPicks(feed) + feed.ytLikedSongs + feed.freshFinds)
+            .filterNot { GeneratedTrack(it.title, it.artist).key in excluded }
+            .randomOrNull()?.let { playTrack(it, "Infinite Radio") }
     }
 
     fun playMix(mix: FeedMix) = playTrack(mix.seed, mix.title)
@@ -245,13 +281,14 @@ class FeedViewModel @Inject constructor(
             val self = coroutineContext[Job]
             _uiState.update {
                 it.copy(
-                    isLoading = !refreshing || it.isLoading,
+                    isLoading = it.isLoading || (!refreshing && !it.feedData.hasContent),
+                    isFeedUpdating = true,
                     isRefreshing = refreshing,
+                    isRefreshIndicatorVisible = refreshing,
                     error = null,
                     selectedChip = if (refreshing) null else it.selectedChip,
                     isChipLoading = if (refreshing) false else it.isChipLoading,
                     isLoadingMore = if (refreshing) false else it.isLoadingMore,
-                    pagedShelves = if (refreshing) emptyList() else it.pagedShelves,
                     chipShelves = if (refreshing) emptyList() else it.chipShelves,
                     chipContinuationToken = if (refreshing) null else it.chipContinuationToken,
                     defaultContinuationToken = if (refreshing) null else it.defaultContinuationToken,
@@ -267,10 +304,13 @@ class FeedViewModel @Inject constructor(
                         sessionPreferences.session.value.username.takeIf(String::isNotBlank) == username
                     ) {
                         _uiState.update {
+                            val (visible, pages) = retainFeedSections(it.feedData, it.pagedShelves, update)
                             it.copy(
-                                feedData = update,
-                                defaultContinuationToken = update.homeContinuationToken ?: it.defaultContinuationToken,
+                                feedData = visible,
+                                pagedShelves = pages,
+                                defaultContinuationToken = it.continuationAfterUpdate(visible.homeContinuationToken ?: it.defaultContinuationToken),
                                 isLoading = false,
+                                isRefreshIndicatorVisible = false,
                             )
                         }
                     }
@@ -279,24 +319,33 @@ class FeedViewModel @Inject constructor(
                 if (ytAuth.connection.value != connection ||
                     sessionPreferences.session.value.username.takeIf(String::isNotBlank) != username
                 ) return@launch
-                val stats = homeRepository.fetchStats().getOrNull()
                 _uiState.update {
+                    val (visible, pages) = retainFeedSections(it.feedData, it.pagedShelves, data)
                     it.copy(
                         isLoading = false,
+                        isFeedUpdating = false,
                         isRefreshing = false,
-                        feedData = data,
-                        defaultContinuationToken = data.homeContinuationToken,
+                        isRefreshIndicatorVisible = false,
+                        feedData = visible,
+                        pagedShelves = pages,
+                        lastCompletedFeed = data,
+                        freshPagedShelfTitles = emptySet(),
+                        defaultContinuationToken = it.continuationAfterUpdate(data.homeContinuationToken),
                         error = null,
-                        avatarUrl = stats?.avatarUrl ?: it.avatarUrl,
                     )
                 }
                 lastLoadedMillis = System.currentTimeMillis()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
+                val stats = runCatching { homeRepository.fetchStats().getOrNull() }.getOrNull()
+                ensureActive()
+                if (ytAuth.connection.value == connection &&
+                    sessionPreferences.session.value.username.takeIf(String::isNotBlank) == username
+                ) {
+                    _uiState.update { it.copy(avatarUrl = stats?.avatarUrl ?: it.avatarUrl) }
+                }
             } catch (_: Exception) {
                 ensureActive()
                 _uiState.update {
-                    it.copy(isLoading = false, isRefreshing = false, error = appContext.getString(com.lastwave.app.R.string.feed_update_error))
+                    it.copy(isLoading = false, isFeedUpdating = false, isRefreshing = false, isRefreshIndicatorVisible = false, error = appContext.getString(com.lastwave.app.R.string.feed_update_error))
                 }
             } finally {
                 // Every exit above the success path — cancellation mid-load
@@ -305,7 +354,7 @@ class FeedViewModel @Inject constructor(
                 // fully-loaded content. Only the job that still owns the state
                 // may clear it, so a newer feed job's flags are never reset.
                 if (feedJob === self) {
-                    _uiState.update { it.copy(isRefreshing = false) }
+                    _uiState.update { it.copy(isFeedUpdating = false, isRefreshing = false, isRefreshIndicatorVisible = false) }
                 }
             }
         }
@@ -397,7 +446,7 @@ class FeedViewModel @Inject constructor(
         val token = if (isChipActive) {
             state.chipContinuationToken
         } else {
-            state.defaultContinuationToken ?: state.feedData.homeContinuationToken
+            state.defaultContinuationToken
         }
         if (token.isNullOrBlank()) return
 
@@ -412,28 +461,38 @@ class FeedViewModel @Inject constructor(
                 ensureActive()
                 if (requestGeneration != currentGen || _uiState.value.selectedChip != activeChip) return@launch
 
-                val existingShelves = if (isChipActive) {
-                    _uiState.value.chipShelves
-                } else {
-                    _uiState.value.feedData.nativeShelves + _uiState.value.pagedShelves
-                }
-                val existingKeys = existingShelves.map(::shelfFingerprint).toSet()
-
-                val newShelves = nextPage.shelves.filter { shelf ->
-                    shelf.items.isNotEmpty() && shelfFingerprint(shelf) !in existingKeys
-                }
-
                 _uiState.update { current ->
                     if (isChipActive) {
+                        val existingKeys = current.chipShelves.map(::shelfFingerprint).toSet()
+                        val newShelves = nextPage.shelves.filter { it.items.isNotEmpty() && shelfFingerprint(it) !in existingKeys }
                         current.copy(
                             isLoadingMore = false,
                             chipShelves = current.chipShelves + newShelves,
                             chipContinuationToken = nextPage.continuationToken,
                         )
                     } else {
+                        val returned = nextPage.shelves.filter { it.items.isNotEmpty() }
+                        val byTitle = returned.associateBy { it.title.trim().lowercase() }
+                        val freshTitles = current.lastCompletedFeed?.nativeShelves.orEmpty()
+                            .filter { it.items.isNotEmpty() }.map { it.title.trim().lowercase() }.toSet() + current.freshPagedShelfTitles
+                        fun updateStale(shelves: List<HomeShelf>) = shelves.map { old ->
+                            val key = old.title.trim().lowercase()
+                            if (current.lastCompletedFeed != null && key !in freshTitles) {
+                                byTitle[key]?.copy(title = old.title) ?: old
+                            } else old
+                        }
+                        val native = updateStale(current.feedData.nativeShelves)
+                        val pages = updateStale(current.pagedShelves)
+                        val existingKeys = (native + pages).map(::shelfFingerprint).toSet()
+                        val newShelves = returned.filter { shelfFingerprint(it) !in existingKeys }
                         current.copy(
                             isLoadingMore = false,
-                            pagedShelves = current.pagedShelves + newShelves,
+                            feedData = current.feedData.copy(nativeShelves = native),
+                            pagedShelves = pages + newShelves,
+                            lastCompletedFeed = current.lastCompletedFeed?.let {
+                                it.copy(nativeShelves = mergeFeedShelves(it.nativeShelves, returned))
+                            },
+                            freshPagedShelfTitles = current.freshPagedShelfTitles + byTitle.keys,
                             defaultContinuationToken = nextPage.continuationToken,
                         )
                     }
@@ -544,6 +603,11 @@ class FeedViewModel @Inject constructor(
         )
     }
 
+    private suspend fun filterRecommendedSongs(tracks: List<YouTubeMusicTrack>): List<YouTubeMusicTrack> {
+        val excluded = discoverRepository.recommendationExclusionKeys()
+        return tracks.filterNot { GeneratedTrack(it.title, it.artist).key in excluded }
+    }
+
     fun playArtistRadio(artist: FeedArtist) {
         viewModelScope.launch {
             val seeds = try {
@@ -571,7 +635,7 @@ class FeedViewModel @Inject constructor(
                     emptyList()
                 }
             }.orEmpty()
-            val songs = (listOfNotNull(seed) + related).distinctBy(YouTubeMusicTrack::videoId)
+            val songs = filterRecommendedSongs((listOfNotNull(seed) + related).distinctBy(YouTubeMusicTrack::videoId))
             if (songs.isNotEmpty()) {
                 playTracksQueue(songs, startIndex = 0, sourceLabel = "${artist.name} Radio")
             }
@@ -610,7 +674,7 @@ class FeedViewModel @Inject constructor(
                         emptyList()
                     }
                     if (searchResults.isNotEmpty()) {
-                        playTracksQueue(searchResults, sourceLabel = title)
+                        playTracksQueue(filterRecommendedSongs(searchResults), sourceLabel = title)
                     }
                 }
             } finally {

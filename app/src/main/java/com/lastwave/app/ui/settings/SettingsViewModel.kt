@@ -12,6 +12,7 @@ import com.lastwave.app.data.local.AppIcon
 import com.lastwave.app.data.local.AppLanguage
 import com.lastwave.app.data.local.EqualizerSettings
 import com.lastwave.app.data.local.MiscSettings
+import com.lastwave.app.data.local.SeekbarStyle
 import com.lastwave.app.playback.haptics.MusicHapticsConfig
 import com.lastwave.app.playback.haptics.MusicHapticsEngineMode
 import com.lastwave.app.playback.haptics.MusicHapticsIntensity
@@ -509,6 +510,7 @@ class SettingsViewModel @Inject constructor(
     fun setLastWaveTheme(enabled: Boolean) = launchSettingsAction("update LastWave signature theme") { themeRepository.setLastWaveTheme(enabled) }
     fun setAppIcon(icon: AppIcon) = launchSettingsAction("update app icon") { themeRepository.setAppIcon(icon) }
     fun setAmoled(enabled: Boolean) = launchSettingsAction("update AMOLED mode") { themeRepository.setAmoled(enabled) }
+    fun setLegacyColors(enabled: Boolean) = launchSettingsAction("update legacy colors") { themeRepository.setLegacyColors(enabled) }
     fun setLiquidGlass(enabled: Boolean) = launchSettingsAction("update Liquid Glass") { themeRepository.setLiquidGlass(enabled) }
     fun setMd3NavBar(enabled: Boolean) = launchSettingsAction("update MD3 Navigation Bar") { themeRepository.setMd3NavBar(enabled) }
     fun setHideNavTabs(enabled: Boolean) = launchSettingsAction("update Hide Navigation Tabs") { themeRepository.setHideNavTabs(enabled) }
@@ -526,6 +528,8 @@ class SettingsViewModel @Inject constructor(
     fun setUseCustomFont(enabled: Boolean) = launchSettingsAction("update the app font") { settingsPreferences.setUseCustomFont(enabled) }
     fun setUseBoldFont(enabled: Boolean) = launchSettingsAction("update font weight") { settingsPreferences.setUseBoldFont(enabled) }
     fun setCollapsingNavBar(enabled: Boolean) = launchSettingsAction("update nav bar collapse") { settingsPreferences.setCollapsingNavBar(enabled) }
+    fun setLegacyTrackMenu(enabled: Boolean) = launchSettingsAction("update classic song menu") { settingsPreferences.setLegacyTrackMenu(enabled) }
+    fun setMenuBlur(enabled: Boolean) = launchSettingsAction("update menu blur") { settingsPreferences.setMenuBlur(enabled) }
     fun setPreferLosslessStreaming(enabled: Boolean) = launchSettingsAction("update streaming preference") { settingsPreferences.setPreferLosslessStreaming(enabled) }
     fun setHiResStart(mode: com.lastwave.app.data.local.HiResStart) = launchSettingsAction("update hi-res start") { settingsPreferences.setHiResStart(mode) }
     fun setWifiStreamingQuality(quality: Int) = launchSettingsAction("update Wi-Fi streaming quality") { settingsPreferences.setWifiStreamingQuality(quality) }
@@ -759,6 +763,9 @@ class SettingsViewModel @Inject constructor(
     fun setCrossfadeSeconds(seconds: Int) = launchSettingsAction("update crossfade duration") {
         settingsPreferences.setCrossfadeSeconds(seconds.coerceIn(1, 12))
     }
+    fun setSeekbarStyle(style: SeekbarStyle) = launchSettingsAction("update seekbar style") {
+        settingsPreferences.setSeekbarStyle(style)
+    }
     fun setWavySeekbarEnabled(enabled: Boolean) = launchSettingsAction("update seekbar style") {
         settingsPreferences.setWavySeekbarEnabled(enabled)
     }
@@ -767,6 +774,9 @@ class SettingsViewModel @Inject constructor(
     }
     fun setLyricsRotatingBackgroundEnabled(enabled: Boolean) = launchSettingsAction("update lyrics rotating background") {
         settingsPreferences.setLyricsRotatingBackgroundEnabled(enabled)
+    }
+    fun setFluidBeatSyncEnabled(enabled: Boolean) = launchSettingsAction("update fluid beat sync") {
+        settingsPreferences.setFluidBeatSyncEnabled(enabled)
     }
     fun setKeepLyricsScreenAwake(enabled: Boolean) = launchSettingsAction("update keep lyrics screen awake") {
         settingsPreferences.setKeepLyricsScreenAwake(enabled)

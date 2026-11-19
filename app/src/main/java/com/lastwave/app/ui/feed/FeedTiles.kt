@@ -232,6 +232,55 @@ internal fun ExpressiveGreetingHeader(
 }
 
 @Composable
+internal fun InfiniteRadioLoadingSkeleton() {
+    Surface(
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 3.dp),
+    ) {
+        val placeholderColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        Column(
+            modifier = Modifier.fillMaxWidth().height(208.dp).padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(Modifier.size(96.dp, 24.dp).background(placeholderColor, CircleShape))
+            Box(Modifier.size(160.dp, 24.dp).background(placeholderColor, RoundedCornerShape(4.dp)))
+            Box(Modifier.size(224.dp, 14.dp).background(placeholderColor, RoundedCornerShape(4.dp)))
+            Box(Modifier.size(96.dp, 48.dp).background(placeholderColor, CircleShape))
+        }
+    }
+}
+
+@Composable
+internal fun QuickTilesLoadingSkeleton() {
+    val placeholderColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        userScrollEnabled = false,
+    ) {
+        items(4) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
+                modifier = Modifier.width(136.dp),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(placeholderColor))
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 8.dp, start = 2.dp, end = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(" ", Modifier.width(80.dp).background(placeholderColor), style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold))
+                        Text(" ", Modifier.width(56.dp).background(placeholderColor), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 14.sp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun InfiniteRadioHero(
     quickPicks: List<YouTubeMusicTrack>,
     onPlay: () -> Unit,
@@ -364,12 +413,14 @@ internal fun TasteStrip(
     tags: List<String>,
     launching: String?,
     onTagClick: (String) -> Unit,
+    onActionClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         FeedSectionHeader(
             title = stringResource(R.string.feed_your_sound),
             subtitle = stringResource(R.string.feed_your_sound_sub),
+            onActionClick = onActionClick,
             onLongClick = onLongClick,
         )
         LazyRow(
@@ -384,10 +435,6 @@ internal fun TasteStrip(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
                     modifier = Modifier,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
-                    ),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
@@ -761,13 +808,13 @@ internal fun QuickPicksRows(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
-                            Box(modifier = Modifier.size(48.dp)) {
+                            Box(modifier = Modifier.size(54.dp)) {
                                 ArtworkImage(
                                     name = track.title,
                                     artist = ArtistHelper.primaryArtist(track.artist),
                                     embeddedUrl = track.artworkUrl,
                                     fallbackIcon = Icons.Filled.MusicNote,
-                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)),
                                 )
                                 if (isCurrent && isPlaying) {
                                     PlayingWaveBars(
@@ -783,7 +830,9 @@ internal fun QuickPicksRows(
                                     track.title,
                                     style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp),
                                     fontWeight = FontWeight.SemiBold,
-                                    maxLines = 2,
+                                    // One line keeps every row the same height; a long
+                                    // title wrapping to two made its row taller than the rest.
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.padding(start = 2.dp),
