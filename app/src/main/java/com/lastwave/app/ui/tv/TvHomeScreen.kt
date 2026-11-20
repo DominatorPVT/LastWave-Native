@@ -234,8 +234,11 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
     // Ambient accent for the pane-wide backdrop — same Palette extraction the
     // hero glow uses (Coil caches the decode, so this is a cache hit).
     val rootAmbientHex = remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(chrome.current?.artworkUrl) {
-        rootAmbientHex.value = chrome.current?.artworkUrl?.let { viewModel.extractAmbientAccent(it) }
+    LaunchedEffect(chrome.current?.artworkUrl, viewModel.canvas?.url) {
+        // A playing Canvas leads the palette: its own frame colours drive the
+        // ambience; without a canvas the still artwork does.
+        rootAmbientHex.value = viewModel.canvas?.url?.let { viewModel.extractCanvasAccent(it) }
+            ?: chrome.current?.artworkUrl?.let { viewModel.extractAmbientAccent(it) }
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val hasTrack = chrome.current != null
@@ -288,6 +291,14 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
             },
         color = MaterialTheme.colorScheme.background,
     ) {
+        // Full-screen backdrop: the artwork blur + tint now flow under the
+        // rail as well — no sharp black band on the left, and the whole
+        // ambience (logo, Home/Search/Library/Settings area included) shifts
+        // with the active track's colour.
+        TvArtworkBackdrop(
+            artworkUrl = chrome.current?.artworkUrl,
+            accentHex = rootAmbientHex.value,
+        )
         if (!setupCompleted) {
             // First-run setup: pointer question + both sign-ins (skippable).
             TvSetupScreen(onComplete = { })
@@ -317,10 +328,6 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                 // the top, dissolving into the page colour, with two soft
                 // accent blobs keeping it alive below. Always tinted by the
                 // track's palette colour, on every API level.
-                TvArtworkBackdrop(
-                    artworkUrl = chrome.current?.artworkUrl,
-                    accentHex = rootAmbientHex.value,
-                )
                 // Smooth pane changes: the outgoing tab dissolves away while
                 // the incoming one drifts up into place — fast, calm, no bounce.
                 AnimatedContent(
@@ -761,8 +768,9 @@ private fun TvNowPlayingHero(
     // phone's dynamic theme uses, fetched off the main thread on artwork
     // change and animated so track switches cross-fade the glow.
     val ambientHex = remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(track?.artworkUrl) {
-        ambientHex.value = track?.artworkUrl?.let { viewModel.extractAmbientAccent(it) }
+    LaunchedEffect(track?.artworkUrl, canvas?.url) {
+        ambientHex.value = canvas?.url?.let { viewModel.extractCanvasAccent(it) }
+            ?: track?.artworkUrl?.let { viewModel.extractAmbientAccent(it) }
     }
     val ambientBase = ambientHex.value
         ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
@@ -854,7 +862,7 @@ private fun TvNowPlayingHero(
                         enableScrim = false,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(ArtworkShape),
+                            .clip(TvArtworkShape),
                     )
                 }
             }
@@ -1518,11 +1526,17 @@ private fun TvTrackCard(
 }
 
 @Composable
+/**
+ * TV artwork corners: rounder than the phone's [ArtworkShape] (12 dp reads
+ * sharp against a 220 dp cover) — the mock's smooth look.
+ */
+private val TvArtworkShape = RoundedCornerShape(24.dp)
+
 private fun TvArtwork(artworkUrl: String?, size: Dp) {
     Box(
         modifier = Modifier
             .size(size)
-            .clip(ArtworkShape)
+            .clip(TvArtworkShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {

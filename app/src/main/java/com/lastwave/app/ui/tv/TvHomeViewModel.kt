@@ -7,7 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.media.MediaMetadataRetriever
 import androidx.palette.graphics.Palette
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -55,6 +57,8 @@ class TvHomeViewModel @Inject constructor(
 
     private var ambientCacheUrl: String? = null
     private var ambientCacheHex: String? = null
+    private var canvasAccentCacheUrl: String? = null
+    private var canvasAccentCacheHex: String? = null
 
     /**
      * Artwork accent for the TV's ambient glow — memoized by URL. The home
@@ -89,6 +93,50 @@ class TvHomeViewModel @Inject constructor(
         }
         ambientCacheUrl = artworkUrl
         ambientCacheHex = hex
+        return hex
+    }
+
+    /**
+     * Ambient accent from the active Canvas VIDEO — a frame is grabbed with
+     * MediaMetadataRetriever (memoized per URL) and run through the same
+     * Palette preference as the artwork path, so when a motion cover plays
+     * the whole TV ambience (backdrop, rail glow, hero washes) follows the
+     * video's colours instead of the still cover's.
+     */
+    suspend fun extractCanvasAccent(videoUrl: String): String? {
+        if (videoUrl == canvasAccentCacheUrl) return canvasAccentCacheHex
+        val hex = withContext(Dispatchers.IO) {
+            runCatching {
+                val retriever = MediaMetadataRetriever()
+                val frame = try {
+                    if (videoUrl.startsWith("http")) {
+                        retriever.setDataSource(videoUrl, emptyMap())
+                    } else {
+                        retriever.setDataSource(videoUrl)
+                    }
+                    retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } finally {
+                    runCatching { retriever.release() }
+                }
+                if (frame == null) return@runCatching null
+                val smallWidth = 128
+                val small = Bitmap.createScaledBitmap(
+                    frame,
+                    smallWidth,
+                    (smallWidth * frame.height / frame.width).coerceAtLeast(1),
+                    true,
+                )
+                val palette = Palette.from(small).generate()
+                val swatch = palette.vibrantSwatch
+                    ?: palette.dominantSwatch
+                    ?: palette.mutedSwatch
+                    ?: return@runCatching null
+                val rgb = swatch.rgb
+                "#%02X%02X%02X".format((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+            }.getOrNull()
+        }
+        canvasAccentCacheUrl = videoUrl
+        canvasAccentCacheHex = hex
         return hex
     }
 

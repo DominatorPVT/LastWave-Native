@@ -73,6 +73,7 @@
 - **Setup Welcome Logo:** The setup screen now shows the original LastWave mark — the dark bars on the logo's lime disc — instead of the barely visible dark-on-dark bars.
 - **Security Hardening:** Login sessions (the Spotify sp_dc store and the YouTube sign-in cookies) are now excluded from device backups and phone-to-phone transfers, and the sign-in pages refuse cleartext (HTTP) subresources so a hostile network cannot inject anything into a page that captures credentials.
 - **TV Now-Playing Hero Redesign:** The home hero now sits on a dark frosted card with consistent round transport buttons, a clearly visible seek bar and softer artwork wash behind it — no more washed-out text floating on a muddy backdrop.
+- **Canvas-Driven TV Ambience:** When a Canvas motion cover plays, the whole TV screen now follows its colours — the blurred backdrop, the rail side (logo, Home, Search, Library, Settings) and the hero glow all shift to the video's palette. The backdrop also flows edge to edge with its blur, removing the sharp black band around the rail, and TV artwork corners are rounder and smoother.
 
 ## [5.0.0] - 2026-10-30
 
