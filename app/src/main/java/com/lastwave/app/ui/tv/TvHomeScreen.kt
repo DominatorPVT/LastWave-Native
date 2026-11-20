@@ -1525,13 +1525,13 @@ private fun TvTrackCard(
     }
 }
 
-@Composable
 /**
  * TV artwork corners: rounder than the phone's [ArtworkShape] (12 dp reads
  * sharp against a 220 dp cover) — the mock's smooth look.
  */
 private val TvArtworkShape = RoundedCornerShape(24.dp)
 
+@Composable
 private fun TvArtwork(artworkUrl: String?, size: Dp) {
     Box(
         modifier = Modifier
