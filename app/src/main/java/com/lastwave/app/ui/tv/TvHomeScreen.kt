@@ -792,8 +792,8 @@ private fun TvNowPlayingHero(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .background(Color.Black.copy(alpha = 0.45f))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(28.dp))
+            .background(Color(0xD91E1E22))
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(28.dp))
             .padding(horizontal = 32.dp, vertical = 26.dp),
     ) {
         // Ambient wash behind the whole hero panel, tinted by the artwork.
@@ -931,7 +931,9 @@ private fun TvNowPlayingHero(
 
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        // Spotify-TV spread: the five controls distribute across
+                        // the whole text column with the play/pause centred.
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TvTransportButton(
@@ -1048,7 +1050,7 @@ private fun TvHeroProgressBlock(viewModel: TvHomeViewModel) {
             Text(
                 text = line,
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
@@ -1107,7 +1109,7 @@ private fun TvHeroProgressBlock(viewModel: TvHomeViewModel) {
                 .fillMaxWidth()
                 .height(barHeight)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(Color.White.copy(alpha = 0.25f)),
+                .background(Color.White.copy(alpha = 0.32f)),
         )
         Box(
             modifier = Modifier
@@ -1763,7 +1765,7 @@ private fun TvMiniProgress(viewModel: TvHomeViewModel) {
                 .weight(1f)
                 .height(3.dp)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(Color.White.copy(alpha = 0.25f)),
+                .background(Color.White.copy(alpha = 0.32f)),
         ) {
             Box(
                 modifier = Modifier
@@ -1962,12 +1964,13 @@ private fun TvHeroArtistLink(title: String, onClick: () -> Unit) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
-            .tvLift(focused = isFocused, shape = RoundedCornerShape(8.dp), focusedScale = 1.03f, elevation = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isFocused) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent)
+            .tvLift(focused = isFocused, shape = RoundedCornerShape(14.dp), focusedScale = 1.03f, elevation = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (isFocused) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
             .onFocusChanged { isFocused = it.isFocused }
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
     )
 }
 
