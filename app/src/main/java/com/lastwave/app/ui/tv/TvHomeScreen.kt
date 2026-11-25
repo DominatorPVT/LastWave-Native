@@ -802,7 +802,7 @@ private fun TvNowPlayingHero(
             .clip(RoundedCornerShape(28.dp))
             .background(Color(0xD91E1E22))
             .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(28.dp))
-            .padding(horizontal = 32.dp, vertical = 26.dp),
+            .padding(horizontal = 28.dp, vertical = 24.dp),
     ) {
         // Ambient wash behind the whole hero panel, tinted by the artwork.
         Box(
@@ -825,12 +825,12 @@ private fun TvNowPlayingHero(
         ) {
             // Motion artwork (Spotify Canvas & friends) when a clip exists for the
             // track; static cover art otherwise.
-            Box(modifier = Modifier.size(220.dp)) {
+            Box(modifier = Modifier.size(188.dp)) {
                 // Radial glow bleeding out from behind the canvas,
                 // tinted by the artwork color.
                 Box(
                     modifier = Modifier
-                        .requiredSize(360.dp)
+                        .requiredSize(320.dp)
                         .background(
                             Brush.radialGradient(
                                 listOf(
@@ -849,7 +849,7 @@ private fun TvNowPlayingHero(
                     animationSpec = tween(durationMillis = 420),
                     label = "tvHeroArt",
                 ) { url ->
-                    TvArtwork(artworkUrl = url, size = 220.dp)
+                    TvArtwork(artworkUrl = url, size = 188.dp)
                 }
                 if (canvas != null) {
                     // CanvasVideoPlayer holds its surface fully transparent
@@ -964,8 +964,8 @@ private fun TvNowPlayingHero(
                             },
                             containerColor = MaterialTheme.colorScheme.primary,
                             iconTint = MaterialTheme.colorScheme.onPrimary,
-                            iconSize = 40.dp,
-                            buttonSize = 72.dp,
+                            iconSize = 38.dp,
+                            buttonSize = 66.dp,
                             modifier = Modifier.focusRequester(playFocus),
                             onClick = viewModel::togglePlayPause,
                         )
@@ -1184,7 +1184,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(76.dp)
+                .size(68.dp)
                 .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 8.dp)
                 .clip(CircleShape)
                 .background(heroDiscColor)
@@ -1196,7 +1196,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
                 imageVector = Icons.Rounded.MusicNote,
                 contentDescription = stringResource(R.string.tv_tab_lyrics),
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(32.dp),
             )
         }
         Text(
@@ -1232,7 +1232,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(76.dp)
+                .size(68.dp)
                 .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 8.dp)
                 .clip(CircleShape)
                 .background(heroDiscColor)
@@ -1244,7 +1244,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
                 imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                 contentDescription = stringResource(R.string.tv_tab_queue),
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(32.dp),
             )
         }
         Text(
@@ -1266,8 +1266,8 @@ private fun TvTransportButton(
     active: Boolean = false,
     containerColor: Color = Color.Transparent,
     iconTint: Color = MaterialTheme.colorScheme.onSurface,
-    iconSize: Dp = 28.dp,
-    buttonSize: Dp = 56.dp,
+    iconSize: Dp = 26.dp,
+    buttonSize: Dp = 52.dp,
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
@@ -1719,20 +1719,23 @@ private fun TvSearchResultRow(track: YouTubeMusicTrack, onPlay: () -> Unit) {
 private fun TvMiniNowPlayingBar(viewModel: TvHomeViewModel) {
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val track = chrome.current ?: return
-    // BitCord's bottom fade scrim: content dissolves into the strip instead
-    // of the strip drawing a hard line under the pane.
+    // The mini strip is the same frosted card as the hero — no opaque
+    // scrim, so the full-screen ambience keeps flowing behind it and no
+    // hard band/line forms at the bottom of the screen.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    0.35f to MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
-                    1f to MaterialTheme.colorScheme.background,
-                ),
-            )
-            .padding(start = 48.dp, end = 48.dp, top = 10.dp, bottom = 12.dp),
+            .padding(start = 48.dp, end = 48.dp, top = 4.dp, bottom = 10.dp),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xD91E1E22))
+                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -1753,8 +1756,8 @@ private fun TvMiniNowPlayingBar(viewModel: TvHomeViewModel) {
                 modifier = Modifier.size(20.dp),
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
         TvMiniProgress(viewModel = viewModel)
+        }
     }
 }
 
@@ -1779,7 +1782,7 @@ private fun TvMiniProgress(viewModel: TvHomeViewModel) {
                 .weight(1f)
                 .height(3.dp)
                 .clip(RoundedCornerShape(percent = 50))
-                .background(Color.White.copy(alpha = 0.32f)),
+                .background(Color.White.copy(alpha = 0.20f)),
         ) {
             Box(
                 modifier = Modifier
