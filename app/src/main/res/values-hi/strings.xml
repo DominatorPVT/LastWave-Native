@@ -1162,6 +1162,12 @@
     <string name="tv_library_sort_az">A–Z</string>
     <string name="tv_library_sort_tracks">ट्रैक्स</string>
     <string name="tv_settings_pointer">वर्चुअल माउस पॉइंटर</string>
+    <string name="tv_settings_sleep">स्लीप टाइमर</string>
+    <string name="tv_settings_sleep_off">बंद</string>
+    <string name="tv_settings_sleep_min">%1$d मिनट</string>
+    <string name="tv_settings_sleep_remaining">प्लेबैक %1$s में रुकेगा</string>
+    <string name="tv_settings_normalization">लाउडनेस नॉर्मलाइज़ेशन</string>
+    <string name="tv_settings_normalization_desc">गानों में वॉल्यूम बराबर रखें (ReplayGain)</string>
     <string name="tv_settings_pointer_desc">साइन-इन पेज पर क्लिक करने के लिए पॉइंटर</string>
     <string name="tv_setup_welcome_title">LastWave में आपका स्वागत है</string>
     <string name="tv_setup_welcome_body">आपका म्यूज़िक, बड़ी स्क्रीन के लिए बना। एक बार सेट करें, बस।</string>

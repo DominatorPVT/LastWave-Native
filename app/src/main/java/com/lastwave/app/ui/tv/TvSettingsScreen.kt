@@ -54,7 +54,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import android.text.format.DateUtils
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lastwave.app.playback.LoudnessMode
+import com.lastwave.app.playback.LoudnessPrefs
+import kotlinx.coroutines.flow.map
 import androidx.lifecycle.viewModelScope
 import com.lastwave.app.BuildConfig
 import com.lastwave.app.R
@@ -80,7 +89,22 @@ class TvSettingsViewModel @Inject constructor(
     private val settingsPreferences: SettingsPreferences,
     private val ytAuth: com.lastwave.app.data.ytmusic.YtMusicAuthManager,
     private val spotifyPreferences: com.lastwave.app.data.spotify.SpotifyPreferences,
+    private val loudnessPrefs: LoudnessPrefs,
 ) : ViewModel() {
+
+    /**
+     * Desktop-parity loudness normalization (ReplayGain/LUFS): keeps the
+     * perceived volume even across tracks. The player's loudness engine
+     * already watches [LoudnessPrefs], so this toggle just drives the store.
+     */
+    val normalizationOn: StateFlow<Boolean> = loudnessPrefs.mode
+        .map { it != LoudnessMode.OFF }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setNormalization(on: Boolean) = viewModelScope.launch {
+        loudnessPrefs.setMode(if (on) LoudnessMode.TRACK else LoudnessMode.OFF)
+    }
+
 
     val uiState: StateFlow<TvSettingsUiState> = combine(
         settingsPreferences.settings,
@@ -121,6 +145,8 @@ class TvSettingsViewModel @Inject constructor(
 fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
     val settingsViewModel: TvSettingsViewModel = hiltViewModel()
     val ui by settingsViewModel.uiState.collectAsStateWithLifecycle()
+    val normalizationOn by settingsViewModel.normalizationOn.collectAsStateWithLifecycle()
+    val playerState by viewModel.musicPlayer.state.collectAsStateWithLifecycle()
     var loginTarget by remember { mutableStateOf<TvLoginTarget?>(null) }
 
     // Tab-entry focus: the first actionable account row grabs focus so the
@@ -212,6 +238,48 @@ fun TvSettingsTab(viewModel: TvHomeViewModel = hiltViewModel()) {
                         onChange = settingsViewModel::setCrossfadeSeconds,
                     )
                 }
+            }
+
+            item(key = "sleep-header") {
+                TvSettingsSectionTitle(stringResource(R.string.tv_settings_sleep), Icons.Rounded.Bedtime)
+            }
+            item(key = "sleep-chips") {
+                val remaining = playerState.sleepTimerRemainingMs
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (remaining != null && remaining > 0) {
+                        Text(
+                            text = stringResource(
+                                R.string.tv_settings_sleep_remaining,
+                                DateUtils.formatElapsedTime(remaining / 1000),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TvSleepChip(
+                            label = stringResource(R.string.tv_settings_sleep_off),
+                            selected = remaining == null,
+                            onClick = { viewModel.musicPlayer.setSleepTimerMinutes(0) },
+                        )
+                        listOf(15, 30, 60).forEach { mins ->
+                            TvSleepChip(
+                                label = stringResource(R.string.tv_settings_sleep_min, mins),
+                                selected = false,
+                                onClick = { viewModel.musicPlayer.setSleepTimerMinutes(mins) },
+                            )
+                        }
+                    }
+                }
+            }
+            item(key = "normalization") {
+                TvSettingsRow(
+                    icon = Icons.Rounded.VolumeUp,
+                    title = stringResource(R.string.tv_settings_normalization),
+                    subtitle = stringResource(R.string.tv_settings_normalization_desc),
+                    checked = normalizationOn,
+                    onToggle = { settingsViewModel.setNormalization(!normalizationOn) },
+                )
             }
 
             item(key = "about-header") {
@@ -385,6 +453,45 @@ private fun TvSettingsSectionTitle(title: String, icon: ImageVector) {
 }
 
 /** A settings line: whole row is the D-pad target; OK activates the toggle. */
+@Composable
+private fun TvSleepChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    var focused by remember { mutableStateOf(false) }
+    val chipColor by animateColorAsState(
+        targetValue = when {
+            focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            else -> Color.White.copy(alpha = 0.08f)
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "tvSleepChipColor",
+    )
+    Box(
+        modifier = Modifier
+            .tvLift(focused = focused, shape = RoundedCornerShape(14.dp), focusedScale = 1.06f, elevation = 5.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(chipColor)
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else Color.Transparent,
+                RoundedCornerShape(14.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
 @Composable
 private fun TvSettingsRow(
     icon: ImageVector?,

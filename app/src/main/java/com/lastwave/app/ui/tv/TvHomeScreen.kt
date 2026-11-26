@@ -937,7 +937,26 @@ private fun TvNowPlayingHero(
                     // thumb blooms (BitChord-style slider affordance).
                     TvHeroProgressBlock(viewModel = viewModel)
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                }
+            }
+            if (track != null) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TvHeroLyricsButton(onClick = onOpenLyrics)
+                    TvHeroQueueButton(onClick = onOpenQueue)
+                }
+            }
+            // Transport spans the whole card below art + words: fixed 30dp
+            // gaps keep the five controls evenly spaced at every TV width,
+            // independent of the text column's width.
+            if (track != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Row(
                         // Spotify-TV spread: the five controls distribute across
                         // the whole text column with the play/pause centred.
@@ -981,15 +1000,6 @@ private fun TvNowPlayingHero(
                             onClick = viewModel::cycleRepeatMode,
                         )
                     }
-                }
-            }
-            if (track != null) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TvHeroLyricsButton(onClick = onOpenLyrics)
-                    TvHeroQueueButton(onClick = onOpenQueue)
                 }
             }
         }

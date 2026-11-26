@@ -1589,6 +1589,12 @@
     <string name="tv_library_sort_az">A–Z</string>
     <string name="tv_library_sort_tracks">Tracks</string>
     <string name="tv_settings_pointer">Virtual mouse pointer</string>
+    <string name="tv_settings_sleep">Sleep timer</string>
+    <string name="tv_settings_sleep_off">Off</string>
+    <string name="tv_settings_sleep_min">%1$d min</string>
+    <string name="tv_settings_sleep_remaining">Playback stops in %1$s</string>
+    <string name="tv_settings_normalization">Loudness normalization</string>
+    <string name="tv_settings_normalization_desc">Keep volume even across tracks (ReplayGain)</string>
     <string name="tv_settings_pointer_desc">Pointer for clicking inside sign-in pages</string>
     <string name="tv_setup_welcome_title">Welcome to LastWave</string>
     <string name="tv_setup_welcome_body">Your music, made for the big screen. Set it up once and everything just works.</string>
