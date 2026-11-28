@@ -31,7 +31,7 @@ data class AutoMixSettings(
     val thermalProfile: ThermalProfile = ThermalProfile.BALANCED,
 )
 
-internal val Context.autoMixDataStore by preferencesDataStore(name = "automix_prefs")
+private val Context.autoMixDataStore by preferencesDataStore(name = "automix_prefs")
 
 @Singleton
 class AutoMixPreferences @Inject constructor(
