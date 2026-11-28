@@ -854,6 +854,10 @@ private fun TvNowPlayingHero(
                     ),
                 ),
         )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -984,7 +988,8 @@ private fun TvNowPlayingHero(
                     TvHeroQueueButton(onClick = onOpenQueue)
                 }
             }
-            // Transport console: the four secondary controls live inside one
+        }
+        // Transport console: the four secondary controls live inside one
             // frosted pill so they read as a single cluster (no more five
             // same-looking grey discs melting into the card), and play/pause
             // stands alone as the hero control with its own colour halo.
@@ -1035,12 +1040,12 @@ private fun TvNowPlayingHero(
                         // artwork/canvas tint so the primary control feels lit.
                         Box(
                             modifier = Modifier
-                                .requiredSize(128.dp)
+                                .requiredSize(112.dp)
                                 .background(
                                     Brush.radialGradient(
                                         listOf(
-                                            ambient.copy(alpha = 0.34f),
-                                            ambient.copy(alpha = 0.12f),
+                                            ambient.copy(alpha = 0.26f),
+                                            ambient.copy(alpha = 0.10f),
                                             Color.Transparent,
                                         ),
                                     ),
