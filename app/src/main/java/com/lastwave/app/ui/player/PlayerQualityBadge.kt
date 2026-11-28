@@ -64,6 +64,10 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionOnScreen
+import com.lastwave.app.ui.player.automix.AutoMixPopupState
+import com.lastwave.app.ui.player.automix.autoMixIdentity
+import com.lastwave.app.playback.automix.api.DeckBlendTelemetry
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -257,6 +261,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.isSpecified
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -374,6 +379,8 @@ internal fun AppleMusicQualityBadge(
     state: MusicPlayerState,
     signalPath: SignalPathReport,
     isTranslucent: Boolean = false,
+    autoMixUi: AutoMixPopupState,
+    progressState: StateFlow<PlaybackProgressState>?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -381,22 +388,18 @@ internal fun AppleMusicQualityBadge(
     val isSpatial = remember(state.audioCodec) { isSpatialAudioCodec(state.audioCodec) }
     val isHiRes = state.isLossless && ((state.samplingRateKHz ?: 44.1) > 48.0 || (state.bitDepth ?: 16) > 16)
     val switch = state.qualitySwitch
-    val baseLabel = remember(state.audioCodec, state.bitrateKbps, state.samplingRateKHz, state.bitDepth, state.isLossless, state.isCrossfading, state.deckBlendTelemetry.phase, state.deckBlendTelemetry.isBlendingActive) {
-        qualityBadgeLabel(state)
+    val baseLabel = remember(state.audioCodec, state.bitrateKbps, state.samplingRateKHz, state.bitDepth, state.isLossless, state.isCrossfading) {
+        qualityBadgeLabel(state.copy(deckBlendTelemetry = DeckBlendTelemetry.IDLE))
     }
 
-    val rawMixActive = state.deckBlendTelemetry.isBlendingActive || state.deckBlendTelemetry.phase == com.lastwave.app.playback.automix.api.BlendPhase.MIX_COMPLETED
-    val rawTransition = when {
-        rawMixActive -> BadgeTransition.MIX
-        state.isCrossfading -> BadgeTransition.FADE
-        else -> BadgeTransition.NONE
+    val progress = progressState?.collectAsStateWithLifecycle()
+        ?: rememberUpdatedState(PlaybackProgressState(positionMs = state.positionMs, durationMs = state.durationMs))
+    val trackKey = state.current?.autoMixIdentity().orEmpty()
+    val mixAvailable by remember(state.deckBlendTelemetry, autoMixUi, progress, trackKey) {
+        derivedStateOf { autoMixUi.canOpen(state.deckBlendTelemetry, progress.value, trackKey) }
     }
-    // A transition label appears immediately but lingers briefly after it
-    // ends. During and right after a deck swap the telemetry and the new
-    // track's quality fields churn (codec cleared, then re-published), which
-    // made the pill flicker between "AutoMix" and partial quality labels.
-    // not produceState: that updates a frame late, so the first blend frame
-    // showed "<codec> • AUTOMIXING" and very short blips skipped the hold
+    val rawTransition = if (state.isCrossfading && !mixAvailable) BadgeTransition.FADE else BadgeTransition.NONE
+    // Crossfade keeps its existing label hold; AutoMix availability and its tap route expire together.
     val transitionHold = remember { BadgeTransitionHold() }
     var holdReleaseTick by remember { mutableIntStateOf(0) }
     @Suppress("UNUSED_VARIABLE") val observeRelease = holdReleaseTick
@@ -412,8 +415,8 @@ internal fun AppleMusicQualityBadge(
             holdReleaseTick++
         }
     }
-    val isMixActive = shownTransition == BadgeTransition.MIX
-    val isFadeActive = shownTransition == BadgeTransition.FADE
+    val isMixActive = mixAvailable
+    val isFadeActive = !mixAvailable && shownTransition == BadgeTransition.FADE
 
     val displayTitle = when {
         isMixActive -> "AutoMix"
@@ -438,21 +441,49 @@ internal fun AppleMusicQualityBadge(
     // veil under light text, light veil under dark text, plus a hairline edge.
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val lightCapsule = !isTranslucent && !darkTheme
-    val capsuleColor = when {
+    val baseCapsuleColor = when {
         isTranslucent -> Color.Black.copy(alpha = 0.30f)
         darkTheme -> Color.Black.copy(alpha = 0.32f)
         else -> Color.White.copy(alpha = 0.62f)
     }
-    val tintColor = when {
+    // One progress value drives the whole AutoMix look (size, colour, neon) so entering and
+    // leaving it morphs from/to the quality pill instead of snapping.
+    val mixState = animateFloatAsState(
+        targetValue = if (isMixActive) 1f else 0f,
+        animationSpec = tween(520, easing = FastOutSlowInEasing),
+        label = "AutoMixMorph",
+    )
+    val mix = mixState.value
+    val capsuleColor = lerp(baseCapsuleColor, Color.Black.copy(alpha = 0.55f), mix)
+    val targetTint = when {
         // Two decks are live during a transition, so the signal path report
         // flips between them; keep a neutral tint until it settles.
         (isMixActive || isFadeActive) && isTranslucent -> Color.White.copy(alpha = 0.95f)
-        isMixActive || isFadeActive -> MaterialTheme.colorScheme.onSurface
+        // The mix capsule is always dark, so its label is white in every theme.
+        isMixActive -> Color.White.copy(alpha = 0.95f)
+        isFadeActive -> MaterialTheme.colorScheme.onSurface
         signalPath.bitPerfect -> if (lightCapsule) Color(0xFF8A6A00) else Color(0xFFE6C15A)
         signalPath.directToHal -> if (lightCapsule) Color(0xFF1B6E62) else Color(0xFF7FD3C3)
         signalPath.clockFallbackResampled -> if (lightCapsule) Color(0xFFA35200) else Color(0xFFFFB74D)
         isTranslucent -> Color.White.copy(alpha = 0.95f)
         else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    val tintColor by animateColorAsState(targetTint, tween(380), label = "BadgeTint")
+    val neonPhase = if (mix > 0.01f) {
+        rememberInfiniteTransition(label = "AutoMixNeon").animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                tween(3600, easing = androidx.compose.animation.core.LinearEasing),
+            ),
+            label = "AutoMixNeonPhase",
+        )
+    } else {
+        null
+    }
+    val badgeTextStyle = MaterialTheme.typography.labelSmall.let {
+        if (it.fontSize.isSpecified) it.copy(fontSize = it.fontSize * (1f + 0.09f * mix)) else it
     }
 
     Box(
@@ -464,8 +495,14 @@ internal fun AppleMusicQualityBadge(
                 // Size animates first so the capsule itself glides when the
                 // label changes (Lossless -> AutoMix -> Hi-Res ...).
                 .animateContentSize()
+                .onGloballyPositioned {
+                    autoMixUi.badgeBounds = androidx.compose.ui.geometry.Rect(
+                        it.positionOnScreen(), Size(it.size.width.toFloat(), it.size.height.toFloat()),
+                    )
+                }
                 .clip(CircleShape)
                 .background(capsuleColor)
+                .then(if (neonPhase != null) Modifier.autoMixNeonBorder(neonPhase) { mixState.value } else Modifier)
                 .combinedClickable(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -476,7 +513,12 @@ internal fun AppleMusicQualityBadge(
                         onClick()
                     },
                 )
-                .padding(start = 9.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                .padding(
+                    start = androidx.compose.ui.unit.lerp(9.dp, 11.dp, mix),
+                    end = androidx.compose.ui.unit.lerp(8.dp, 10.dp, mix),
+                    top = androidx.compose.ui.unit.lerp(4.dp, 6.dp, mix),
+                    bottom = androidx.compose.ui.unit.lerp(4.dp, 6.dp, mix),
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -484,9 +526,9 @@ internal fun AppleMusicQualityBadge(
                 imageVector = badgeIcon,
                 contentDescription = null,
                 tint = tintColor,
-                modifier = Modifier.size(13.dp),
+                modifier = Modifier.size(androidx.compose.ui.unit.lerp(13.dp, 15.dp, mix)),
             )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(androidx.compose.ui.unit.lerp(4.dp, 5.dp, mix)))
             val fullText = when {
                 isMixActive || isFadeActive || switch != null -> displayTitle
                 baseLabel.isNotBlank() && !baseLabel.equals(displayTitle, ignoreCase = true) && !baseLabel.equals("AUDIO", ignoreCase = true) -> "$displayTitle \u2022 $baseLabel"
@@ -499,8 +541,8 @@ internal fun AppleMusicQualityBadge(
             ) { label ->
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
+                    style = badgeTextStyle.copy(
+                        fontWeight = FontWeight(androidx.compose.ui.util.lerp(700, 900, mix)),
                         letterSpacing = 0.4.sp,
                     ),
                     color = tintColor,
@@ -518,3 +560,32 @@ internal fun AppleMusicQualityBadge(
         }
     }
 }
+
+// Neon rim for the AutoMix pill: a hue-cycling sweep plus a soft inner glow. The phase is
+// read in the draw phase so the animation never recomposes the badge.
+private fun Modifier.autoMixNeonBorder(
+    phase: androidx.compose.runtime.State<Float>,
+    visibility: () -> Float,
+): Modifier =
+    drawWithContent {
+        drawContent()
+        val show = visibility()
+        val brush = Brush.sweepGradient(
+            List(7) { Color.hsv((phase.value + it * 60f) % 360f, 0.85f, 1f) },
+        )
+        val stroke = 2.dp.toPx()
+        drawRoundRect(
+            brush = brush,
+            alpha = 0.30f * show,
+            cornerRadius = CornerRadius(size.height / 2f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke * 4f),
+        )
+        drawRoundRect(
+            brush = brush,
+            alpha = show,
+            topLeft = Offset(stroke / 2f, stroke / 2f),
+            size = Size(size.width - stroke, size.height - stroke),
+            cornerRadius = CornerRadius((size.height - stroke) / 2f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
+        )
+    }

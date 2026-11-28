@@ -17,6 +17,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -87,6 +89,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,10 +108,12 @@ import com.lastwave.app.data.generate.GeneratedTrack
 import com.lastwave.app.data.playlist.SavedPlaylist
 import com.lastwave.app.data.playlist.LIKED_SONGS_MODE
 import com.lastwave.app.data.playlist.LOCAL_SONGS_MODE
+import com.lastwave.app.data.playlist.PlaylistImportManager
 import com.lastwave.app.data.playlist.isYouTubeOnly
 import com.lastwave.app.playback.toPlayableTrack
 import com.lastwave.app.ui.common.ArtworkImage
 import com.lastwave.app.ui.common.ExpressiveHeader
+import com.lastwave.app.ui.common.GroupPosition
 import com.lastwave.app.ui.common.PlaylistCover
 import com.lastwave.app.ui.common.TopCurvedSectionClipShape
 import com.lastwave.app.ui.common.TrackContextMenuSheet
@@ -130,6 +135,55 @@ import java.util.Locale
  * capability set, matching the original's playlist.js menu exactly).
  */
 
+private enum class PlaylistFilter(val label: String) {
+    ALL("All"),
+    LIKED("Liked"),
+    GENERATED("Generated"),
+    YTMUSIC("YT Music"),
+    SPOTIFY("Spotify"),
+    IMPORTED("Imported"),
+    PINNED("Pinned"),
+}
+
+private val GENERATED_MODES = setOf(
+    "discover", "generate", "recommendations", "mix", "top", "recent",
+    "similar-tracks", "similar-artists", "tag", "never-heard", "library", "radio"
+)
+
+private fun heroPillShape(
+    index: Int,
+    count: Int,
+    hasItemsBelow: Boolean,
+): RoundedCornerShape {
+    val outer = 24.dp
+    val inner = 6.dp
+    if (count == 1) {
+        return RoundedCornerShape(
+            topStart = outer,
+            topEnd = outer,
+            bottomStart = if (hasItemsBelow) inner else outer,
+            bottomEnd = if (hasItemsBelow) inner else outer,
+        )
+    }
+    return RoundedCornerShape(
+        topStart = if (index == 0) outer else inner,
+        topEnd = if (index == count - 1) outer else inner,
+        bottomStart = if (index == 0 && !hasItemsBelow) outer else inner,
+        bottomEnd = if (index == count - 1 && !hasItemsBelow) outer else inner,
+    )
+}
+
+private fun connectedShape(index: Int, count: Int): RoundedCornerShape {
+    val outer = 24.dp
+    val inner = 6.dp
+    return RoundedCornerShape(
+        topStart = if (index == 0) outer else inner,
+        bottomStart = if (index == 0) outer else inner,
+        topEnd = if (index == count - 1) outer else inner,
+        bottomEnd = if (index == count - 1) outer else inner,
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistScreen(
@@ -143,7 +197,9 @@ fun PlaylistScreen(
     val musicPlayer = com.lastwave.app.ui.player.LocalMusicPlayer.current
     val playbackState by musicPlayer.listPlaybackState.collectAsStateWithLifecycle()
     val addToPlaylist = com.lastwave.app.ui.player.LocalAddToPlaylist.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var searchQuery by remember { mutableStateOf("") }
+    var selectedFilter by rememberSaveable { mutableStateOf(PlaylistFilter.ALL) }
     var coverEditorPlaylistId by remember { mutableStateOf<Long?>(null) }
     var coverPickerPlaylistId by remember { mutableStateOf<Long?>(null) }
     val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -254,6 +310,49 @@ fun PlaylistScreen(
                 },
             )
 
+            // Base pill container holding filter chips
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlaylistFilter.entries.forEach { filter ->
+                        val isSelected = selectedFilter == filter
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                selectedFilter = filter
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
+                            modifier = Modifier.height(34.dp),
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                            ) {
+                                Text(
+                                    text = filter.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Search Bar + Generator button matching Downloads tab design
             Row(
                 modifier = Modifier
@@ -316,22 +415,42 @@ fun PlaylistScreen(
                 }
             }
 
-            val localSongsPlaylist = remember(state.playlists, searchQuery) {
-                state.playlists.firstOrNull {
-                    it.mode == LOCAL_SONGS_MODE && it.matchesPlaylistSearch(searchQuery)
-                }
+            val localSongsPlaylist = remember(state.playlists, searchQuery, selectedFilter) {
+                if (selectedFilter == PlaylistFilter.ALL || selectedFilter == PlaylistFilter.IMPORTED) {
+                    state.playlists.firstOrNull {
+                        it.mode == LOCAL_SONGS_MODE && it.matchesPlaylistSearch(searchQuery)
+                    }
+                } else null
             }
 
-            val filteredPlaylists = remember(state.playlists, searchQuery) {
-                state.playlists.filter {
-                    it.mode != LOCAL_SONGS_MODE && it.matchesPlaylistSearch(searchQuery)
-                }
+            val filteredPlaylists = remember(state.playlists, searchQuery, selectedFilter) {
+                state.playlists
+                    .filter { it.mode != LOCAL_SONGS_MODE }
+                    .filter { pl ->
+                        when (selectedFilter) {
+                            PlaylistFilter.ALL -> true
+                            PlaylistFilter.LIKED -> pl.mode == LIKED_SONGS_MODE || pl.title.equals("Liked Songs", ignoreCase = true) || pl.remotePlaylistId?.let(PlaylistImportManager::isYtLikedId) == true || pl.remotePlaylistId == "LM"
+                            PlaylistFilter.GENERATED -> pl.mode in GENERATED_MODES || pl.discoverSignature != null
+                            PlaylistFilter.YTMUSIC -> pl.isYouTubeOnly || pl.remotePlaylistId != null
+                            PlaylistFilter.SPOTIFY -> false
+                            PlaylistFilter.IMPORTED -> pl.mode == "imported" || pl.mode == "custom"
+                            PlaylistFilter.PINNED -> pl.isPinned
+                        }
+                    }
+                    .filter { it.matchesPlaylistSearch(searchQuery) }
             }
 
-            val filteredSpotifyPlaylists = remember(state.spotifyPlaylists, searchQuery) {
-                if (searchQuery.isBlank()) state.spotifyPlaylists
-                else state.spotifyPlaylists.filter {
-                    it.name.contains(searchQuery, ignoreCase = true)
+            val filteredSpotifyPlaylists = remember(state.spotifyPlaylists, searchQuery, selectedFilter) {
+                if (selectedFilter != PlaylistFilter.ALL && selectedFilter != PlaylistFilter.SPOTIFY && selectedFilter != PlaylistFilter.LIKED) {
+                    emptyList()
+                } else if (selectedFilter == PlaylistFilter.LIKED) {
+                    state.spotifyPlaylists.filter { it.id == "liked" && (searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)) }
+                } else if (searchQuery.isBlank()) {
+                    state.spotifyPlaylists
+                } else {
+                    state.spotifyPlaylists.filter {
+                        it.name.contains(searchQuery, ignoreCase = true)
+                    }
                 }
             }
 
@@ -339,8 +458,14 @@ fun PlaylistScreen(
             val downloadedCount by viewModel.downloadedCount.collectAsStateWithLifecycle()
             // Downloads lives here now (it left the Home/Stats headers): always
             // shown, except while a search for something else is typed.
-            val showDownloadsCard = searchQuery.isBlank() ||
-                "downloads".contains(searchQuery.trim(), ignoreCase = true)
+            val showDownloadsCard = (searchQuery.isBlank() ||
+                "downloads".contains(searchQuery.trim(), ignoreCase = true)) &&
+                (selectedFilter == PlaylistFilter.ALL || selectedFilter == PlaylistFilter.IMPORTED)
+
+            val hasHeroRow = localSongsPlaylist != null || showDownloadsCard
+            val heroCardCount = (if (localSongsPlaylist != null) 1 else 0) + (if (showDownloadsCard) 1 else 0)
+            val totalPlaylistCount = effectiveSpotify.size + filteredPlaylists.size
+            val hasItemsBelow = totalPlaylistCount > 0
 
             Box(
                 modifier = Modifier
@@ -349,8 +474,8 @@ fun PlaylistScreen(
             ) {
                 when {
                     state.isLoading && state.playlists.isEmpty() && !state.isGenerating -> LoadingState()
-                    localSongsPlaylist == null && filteredPlaylists.isEmpty() && !state.isGenerating &&
-                        effectiveSpotify.isEmpty() && (downloadedCount == 0 || !showDownloadsCard) -> EmptyState()
+                    !hasHeroRow && filteredPlaylists.isEmpty() && !state.isGenerating &&
+                        effectiveSpotify.isEmpty() -> EmptyState()
                     else -> LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = FloatingNavDefaults.contentBottomPadding()),
                         verticalArrangement = Arrangement.spacedBy(com.lastwave.app.ui.common.GroupGap),
@@ -358,52 +483,51 @@ fun PlaylistScreen(
                             .fillMaxWidth()
                             .clip(TopCurvedSectionClipShape(horizontalInset = 16.dp, cornerRadius = 28.dp)),
                     ) {
-                        if (localSongsPlaylist != null) {
-                            val hasPlaylistsBelow = showDownloadsCard ||
-                                state.isGenerating ||
-                                state.justSavedBannerVisible ||
-                                effectiveSpotify.isNotEmpty() ||
-                                filteredPlaylists.isNotEmpty()
-                            item(key = "local_songs_hero", contentType = "local_songs_hero") {
-                                Box(
-                                    modifier = Modifier
-                                        .animateItem()
-                                        .then(if (hasPlaylistsBelow) Modifier.padding(bottom = 13.dp) else Modifier),
-                                ) {
-                                    LocalSongsHeroCard(
-                                        playlist = localSongsPlaylist,
-                                        isPlaying = playbackState.isPlaying,
-                                        playbackSource = playbackState.sourceLabel,
-                                        onClick = { onOpenPlaylist(localSongsPlaylist.id) },
-                                        onEditCover = { coverEditorPlaylistId = localSongsPlaylist.id },
-                                        onPlay = {
-                                            musicPlayer.playQueue(
-                                                localSongsPlaylist.tracks.map(GeneratedTrack::toPlayableTrack),
-                                                startIndex = 0,
-                                                sourceLabel = localSongsPlaylist.title,
-                                                enableRadioContinuation = false,
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                        }
-
-                        if (showDownloadsCard) {
-                            val hasPlaylistsBelow = state.isGenerating ||
-                                state.justSavedBannerVisible ||
-                                effectiveSpotify.isNotEmpty() ||
-                                filteredPlaylists.isNotEmpty()
-                            item(key = "downloads_hero", contentType = "downloads_hero") {
-                                Box(
-                                    modifier = Modifier
-                                        .animateItem()
-                                        .then(if (hasPlaylistsBelow) Modifier.padding(bottom = 13.dp) else Modifier),
-                                ) {
-                                    DownloadsHeroCard(
-                                        downloadedCount = downloadedCount,
-                                        onClick = viewModel::openDownloads,
-                                    )
+                        if (hasHeroRow) {
+                            item(key = "heroes_side_by_side", contentType = "heroes_side_by_side") {
+                                Box(modifier = Modifier.animateItem()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        if (localSongsPlaylist != null) {
+                                            Box(Modifier.weight(1f)) {
+                                                LocalSongsHeroCard(
+                                                    playlist = localSongsPlaylist,
+                                                    isPlaying = playbackState.isPlaying,
+                                                    playbackSource = playbackState.sourceLabel,
+                                                    shape = heroPillShape(
+                                                        index = 0,
+                                                        count = heroCardCount,
+                                                        hasItemsBelow = hasItemsBelow,
+                                                    ),
+                                                    onClick = { onOpenPlaylist(localSongsPlaylist.id) },
+                                                    onPlay = {
+                                                        musicPlayer.playQueue(
+                                                            localSongsPlaylist.tracks.map(GeneratedTrack::toPlayableTrack),
+                                                            startIndex = 0,
+                                                            sourceLabel = localSongsPlaylist.title,
+                                                            enableRadioContinuation = false,
+                                                        )
+                                                    },
+                                                )
+                                            }
+                                        }
+                                        if (showDownloadsCard) {
+                                            Box(Modifier.weight(1f)) {
+                                                DownloadsHeroCard(
+                                                    downloadedCount = downloadedCount,
+                                                    shape = heroPillShape(
+                                                        index = if (localSongsPlaylist != null) 1 else 0,
+                                                        count = heroCardCount,
+                                                        hasItemsBelow = hasItemsBelow,
+                                                    ),
+                                                    onClick = viewModel::openDownloads,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -435,7 +559,10 @@ fun PlaylistScreen(
                             }
                         }
 
-                        val groupedPlaylistCount = effectiveSpotify.size + filteredPlaylists.size
+                        fun playlistGroupPosition(index: Int): GroupPosition = when {
+                            hasHeroRow -> if (index == totalPlaylistCount - 1) GroupPosition.BOTTOM else GroupPosition.MIDDLE
+                            else -> com.lastwave.app.ui.common.groupPositionFor(index, totalPlaylistCount)
+                        }
 
                         if (effectiveSpotify.isNotEmpty()) {
                             itemsIndexed(
@@ -445,7 +572,7 @@ fun PlaylistScreen(
                                 Box(Modifier.animateItem()) {
                                     SpotifyPlaylistCard(
                                         playlist = pl,
-                                        position = com.lastwave.app.ui.common.groupPositionFor(index, groupedPlaylistCount),
+                                        position = playlistGroupPosition(index),
                                         onClick = {
                                             val routeId = if (pl.id == "liked") "sp_liked" else "sp_${pl.id}"
                                             onOpenFeedPlaylist(routeId)
@@ -465,7 +592,7 @@ fun PlaylistScreen(
                                 PlaylistCard(
                                     playlist = playlist,
                                     isNewest = isNewest,
-                                    position = com.lastwave.app.ui.common.groupPositionFor(globalIndex, groupedPlaylistCount),
+                                    position = playlistGroupPosition(globalIndex),
                                     isRegenerating = state.regeneratingId == playlist.id,
                                     currentTrack = playbackState.current,
                                     isPlaying = playbackState.isPlaying,

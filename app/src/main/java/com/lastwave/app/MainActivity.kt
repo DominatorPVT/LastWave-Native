@@ -47,6 +47,9 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
     lateinit var linkPlaybackResolver: dagger.Lazy<com.lastwave.app.playback.LinkPlaybackResolver>
 
     @Inject
+    lateinit var discordPresenceManager: dagger.Lazy<com.lastwave.app.presence.DiscordPresenceManager>
+
+    @Inject
     lateinit var appRouteNavigator: dagger.Lazy<com.lastwave.app.ui.navigation.AppRouteNavigator>
 
     @Inject
@@ -255,6 +258,7 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        runCatching { discordPresenceManager.get().onAppForegrounded() }
         requestHighestSupportedRefreshRate()
     }
 
@@ -325,7 +329,7 @@ open class MainShellActivity : androidx.fragment.app.FragmentActivity() {
             androidx.core.content.ContextCompat.startForegroundService(this, playbackIntent)
             return
         }
-        val uri = intent?.data
+        val uri = intent?.data ?: intent?.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
         val scheme = uri?.scheme.orEmpty().lowercase()
         val host = uri?.host.orEmpty().lowercase()
         val isSupportedMusicLink = intent?.action == Intent.ACTION_VIEW &&

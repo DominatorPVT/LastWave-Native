@@ -56,6 +56,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import com.lastwave.app.ui.player.automix.AutoMixPopupHost
+import com.lastwave.app.ui.player.automix.AutoMixPopupState
+import com.lastwave.app.ui.player.automix.autoMixIdentity
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.lerp
 import kotlin.math.cos
@@ -164,6 +167,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
@@ -433,17 +437,18 @@ internal fun FullPlayer(
     val fullBleedBlocked = isTabletLandscape
     val showFullBleed = canvasFullBleedEnabled && !isVideoActive && !fullBleedBlocked
     val showSleeveCanvas = isCanvasActive && !showFullBleed && !isVideoActive
-    val beatRhythm by com.lastwave.app.playback.rhythm.FluidRhythmEngine.rhythm.collectAsStateWithLifecycle()
     // activeCanvas is the single gate every render branch below keys off, so it also
     // carries the Animated Album Canvas toggle. The ViewModel nulls canvasState
     // asynchronously, so without this a disabled toggle still paints one frame of
     // motion artwork over the cover.
-    val activeCanvas = remember(canvas, showFullBleed, canvasEnabled) {
+    val activeCanvas = remember(canvas, canvasFullBleedEnabled, canvasEnabled) {
         if (!canvasEnabled) {
             null
         } else {
             val tall = canvas?.tallUrl
-            if (showFullBleed && canvas != null && !tall.isNullOrBlank()) {
+            // Full Screen Artwork picks the tall clip in every layout, including
+            // the tablet's two-column pane.
+            if (canvasFullBleedEnabled && canvas != null && !tall.isNullOrBlank()) {
                 canvas.copy(url = tall)
             } else {
                 canvas
@@ -509,6 +514,15 @@ internal fun FullPlayer(
     }
     var showTrackMenu by remember(track.videoId, track.title) { mutableStateOf(false) }
     var showSignalPath by remember { mutableStateOf(false) }
+    val autoMixUi = remember { AutoMixPopupState() }
+    val autoMixTracks = remember(state.queue, track) {
+        if (track in state.queue) state.queue else state.queue + track
+    }
+    val openBadge = {
+        if (!autoMixUi.open(state.deckBlendTelemetry, progressState.value, track.autoMixIdentity())) {
+            showSignalPath = true
+        }
+    }
     var showAudioControls by remember { mutableStateOf(false) }
     var showAutoEq by remember { mutableStateOf(false) }
     val signalPath by player.signalPath.collectAsStateWithLifecycle()
@@ -724,49 +738,6 @@ internal fun FullPlayer(
                 animationSpec = tween(350),
                 label = "lyricsVeil",
             )
-            // Beat sync only: its black-screen guard. The default background never
-            // needed these layers, and drawing them is extra overdraw every frame.
-            if (fluidBeatSyncEnabled) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                0f to ambientColor.copy(alpha = 0.58f),
-                                0.45f to ambientColor.copy(alpha = 0.22f),
-                                1f to Color.Transparent,
-                                center = androidx.compose.ui.geometry.Offset(bgWidth * 0.25f, bgHeight * 0.20f),
-                                radius = bgMaxDimension * 0.85f,
-                            )
-                        )
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                0f to ambientCompanion.copy(alpha = 0.52f),
-                                0.50f to ambientCompanion.copy(alpha = 0.20f),
-                                1f to Color.Transparent,
-                                center = androidx.compose.ui.geometry.Offset(bgWidth * 0.88f, bgHeight * 0.65f),
-                                radius = bgMaxDimension * 0.78f,
-                            )
-                        )
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                0f to ambientDeep.copy(alpha = 0.42f),
-                                0.55f to ambientDeep.copy(alpha = 0.14f),
-                                1f to Color.Transparent,
-                                center = androidx.compose.ui.geometry.Offset(bgWidth * 0.15f, bgHeight * 0.82f),
-                                radius = bgMaxDimension * 0.70f,
-                            )
-                        )
-                )
-            }
             // Kept out of the glass capture: every motion step re-blurred each glass
             // control (~2x frame cost). The fluid is already blurred, so it shows through.
             FluidArtworkBackground(
@@ -876,67 +847,37 @@ internal fun FullPlayer(
                         bgMaxDimension = bgMaxDimension,
                     )
                 }
-                // Contrast scrim gradient (ensures text & controls are clear while preserving vibrant colors).
-                // The lighter variant is beat sync's; the default keeps the original scrim.
-                val beatScrim = showFullBleed && fluidBeatSyncEnabled
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0.00f to Color.Black.copy(alpha = if (beatScrim) 0.18f else 0.35f),
-                                0.28f to Color.Black.copy(alpha = if (beatScrim) 0.05f else 0.15f),
-                                (if (beatScrim) 0.60f else 0.65f) to Color.Black.copy(alpha = if (beatScrim) 0.12f else 0.40f),
-                                1.00f to Color.Black.copy(alpha = if (beatScrim) 0.32f else 0.72f),
-                            )
-                        )
-                )
-                // Subtle edge vignette
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                0f to Color.Transparent,
-                                0.65f to Color.Transparent,
-                                1f to Color.Black.copy(alpha = 0.30f),
-                                center = androidx.compose.ui.geometry.Offset(
-                                    bgWidth * 0.50f,
-                                    bgHeight * 0.40f,
-                                ),
-                                radius = bgMaxDimension * 0.80f,
-                            ),
-                        ),
-                )
-                if (showFullBleed && fluidBeatSyncEnabled) {
-                    // Prominent beat-reactive ambient visualizer wave under full-screen artwork
+                // Beat sync skips both, as Lyra does: its shader already dims the flow.
+                if (!fluidBeatSyncEnabled) {
+                    // Contrast scrim gradient (ensures text & controls are clear while preserving vibrant colors).
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .graphicsLayer {
-                                @Suppress("UNUSED_VARIABLE")
-                                val observed = beatRhythm
-                                val r = if (state.isPlaying && fluidBeatSyncEnabled) {
-                                    com.lastwave.app.playback.rhythm.FluidRhythmEngine.currentRhythmValue
-                                } else {
-                                    0f
-                                }
-                                alpha = (0.35f + r * 0.65f).coerceIn(0f, 1f)
-                                val pulseScale = 1.0f + r * 0.38f
-                                scaleX = pulseScale
-                                scaleY = pulseScale
-                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1.0f)
-                            }
                             .background(
-                                Brush.radialGradient(
-                                    0.0f to ambientColor.copy(alpha = 0.90f),
-                                    0.35f to ambientCompanion.copy(alpha = 0.60f),
-                                    0.70f to ambientDeep.copy(alpha = 0.35f),
-                                    1.0f to Color.Transparent,
-                                    center = androidx.compose.ui.geometry.Offset(bgWidth * 0.50f, bgHeight * 0.90f),
-                                    radius = bgMaxDimension * 0.85f,
+                                Brush.verticalGradient(
+                                    0.00f to Color.Black.copy(alpha = 0.35f),
+                                    0.28f to Color.Black.copy(alpha = 0.15f),
+                                    0.65f to Color.Black.copy(alpha = 0.40f),
+                                    1.00f to Color.Black.copy(alpha = 0.72f),
                                 )
                             )
+                    )
+                    // Subtle edge vignette
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    0f to Color.Transparent,
+                                    0.65f to Color.Transparent,
+                                    1f to Color.Black.copy(alpha = 0.30f),
+                                    center = androidx.compose.ui.geometry.Offset(
+                                        bgWidth * 0.50f,
+                                        bgHeight * 0.40f,
+                                    ),
+                                    radius = bgMaxDimension * 0.80f,
+                                ),
+                            ),
                     )
                 }
                 if (showFullBleed) {
@@ -1336,8 +1277,10 @@ internal fun FullPlayer(
                     modifier = Modifier
                         .weight(1f)
                         .then(
+                            // No cap in landscape: the split's art pane must reach the
+                            // screen edge, or wide (>1200dp) tablets get a hard-edged band.
                             if (isTabletLandscape) {
-                                Modifier.widthIn(max = 1200.dp).fillMaxWidth()
+                                Modifier.fillMaxWidth()
                             } else {
                                 Modifier.adaptiveContentWidth(maxWidth = 680.dp)
                             }
@@ -1381,12 +1324,15 @@ internal fun FullPlayer(
                                     }
                                 },
                             ) {
-                                // Landscape: lyrics beside the same full-bleed art pane as
-                                // Now Playing.
-                                // Lyrics' own fullscreen still takes the whole width.
-                                val landscapeSplit = isTabletLandscape && !lyricsFullscreen
+                                // Landscape: lyrics beside the same art pane as Now Playing, fullscreen too.
+                                // Tablet fullscreen lyrics span a wide screen; side-staged rows
+                                // read as ragged, so they are always centred there.
+                                val tabletFullscreen = isTablet && lyricsFullscreen
+                                CompositionLocalProvider(
+                                    LocalLyricsAlignment provides if (tabletFullscreen) LyricsAlignment(centered = true) else LocalLyricsAlignment.current,
+                                ) {
                                 Row(Modifier.fillMaxSize()) {
-                                if (landscapeSplit) {
+                                if (isTabletLandscape) {
                                     LandscapeArtworkPane(
                                         track = track,
                                         state = state,
@@ -1399,6 +1345,7 @@ internal fun FullPlayer(
                                         isVideoActive = isVideoActive,
                                         onCloseVideo = { syncedVideoVm.setVideoActive(false) },
                                         onEnterFullscreen = { isVideoFullscreen = true },
+                                        fullBleed = canvasFullBleedEnabled,
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
@@ -1440,7 +1387,7 @@ internal fun FullPlayer(
                                     secondaryColor = ambientCompanion,
                                     tertiaryColor = ambientDeep,
                                     resolvedArtworkUrl = resolvedAmbientUrl,
-                                    modifier = if (landscapeSplit) {
+                                    modifier = if (isTabletLandscape) {
                                         Modifier
                                             .weight(1.15f)
                                             .fillMaxHeight()
@@ -1450,6 +1397,7 @@ internal fun FullPlayer(
                                             .adaptiveContentWidth(maxWidth = if (isTabletLandscape) 960.dp else 720.dp)
                                     },
                                 )
+                                }
                                 }
                             }
                         }
@@ -1483,6 +1431,7 @@ internal fun FullPlayer(
                                     wavySeekbarEnabled = wavySeekbarEnabled,
                                     showSleeveCanvas = showSleeveCanvas,
                                     canvas = activeCanvas ?: canvas,
+                                    canvasFullBleed = canvasFullBleedEnabled,
                                     ambientColor = ambientColor,
                                     ambientCompanion = ambientCompanion,
                                     ambientDeep = ambientDeep,
@@ -1495,7 +1444,8 @@ internal fun FullPlayer(
                                     onTabChange = onTabChange,
                                     shownDismissY = shownDismissY,
                                     swipeThreshold = swipeThreshold,
-                                    onOpenSignalPath = { showSignalPath = true },
+                                    onOpenSignalPath = openBadge,
+                                    autoMixUi = autoMixUi,
                                     onOpenAudioControls = { showAudioControls = true },
                                     musicVideoEnabled = musicVideoEnabled,
                                     isVideoActive = isVideoActive,
@@ -2047,7 +1997,9 @@ internal fun FullPlayer(
                                         state = state,
                                         signalPath = signalPath,
                                         isTranslucent = LocalLiquidGlass.current || showFullBleed,
-                                        onClick = { showSignalPath = true },
+                                        autoMixUi = autoMixUi,
+                                        progressState = progressState,
+                                        onClick = openBadge,
                                         modifier = Modifier.offset(y = (-2).dp),
                                     )
                                     Spacer(Modifier.height(12.dp))
@@ -2121,7 +2073,7 @@ internal fun FullPlayer(
             onDismiss = { showTrackMenu = false },
             onPlayInLastWave = { player.play(track, sourceLabel = state.sourceLabel) },
             canWatchVideo = canWatchVideo,
-            onWatchVideo = if (canWatchVideo) ({ syncedVideoVm.setVideoActive(true) }) else null,
+            onWatchVideo = onToggleSyncedVideo,
         )
     }
 
@@ -2132,6 +2084,15 @@ internal fun FullPlayer(
             onDismiss = { showLyricsOffsetDialog = false },
         )
     }
+    AutoMixPopupHost(
+        ui = autoMixUi,
+        telemetry = state.deckBlendTelemetry,
+        progressState = progressState,
+        trackKey = track.autoMixIdentity(),
+        isPlayerOpen = isOpen,
+        player = player,
+        tracks = autoMixTracks,
+    )
     if (showSignalPath) {
         val dac = usbDac.dac
         val internalAvailability by player.internalDirectAvailability.collectAsStateWithLifecycle()

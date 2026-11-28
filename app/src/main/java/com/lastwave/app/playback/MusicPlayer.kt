@@ -40,6 +40,7 @@ import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
@@ -82,6 +83,7 @@ import com.lastwave.app.data.local.AdaptiveCacheEvictor
 import com.lastwave.app.data.local.EqualizerPreferences
 import com.lastwave.app.data.local.SettingsPreferences
 import com.lastwave.app.data.local.db.DownloadedTrackEntity
+import com.lastwave.app.data.music.DeferredStreamProbe
 import com.lastwave.app.data.music.InnerTubeMusicApi
 import com.lastwave.app.data.music.ConfirmedUnplayableMediaException
 import com.lastwave.app.data.music.YouTubeAudioStream
@@ -213,7 +215,7 @@ class MusicPlayer @Inject constructor(
     internal val streamResolver = StreamResolveCoordinator(
         cacheDir = File(appContext.cacheDir, "playback_stream_cache"),
         scope = applicationScope,
-        extract = { videoId -> innerTube.resolveAudioStream(videoId) },
+        extract = { videoId -> withContext(DeferredStreamProbe) { innerTube.resolveAudioStream(videoId) } },
     )
     private val streamResolutionWakeLock by lazy {
         (appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.newWakeLock(
@@ -221,7 +223,7 @@ class MusicPlayer @Inject constructor(
             "LastWave:StreamResolutionWakeLock",
         )?.apply { setReferenceCounted(false) }
     }
-    private val extractorsFactory: ExtractorsFactory by lazy {
+    internal val extractorsFactory: ExtractorsFactory by lazy {
         val defaults = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
             .setMp3ExtractorFlags(
@@ -233,7 +235,10 @@ class MusicPlayer @Inject constructor(
             )
         object : ExtractorsFactory {
             override fun createExtractors(): Array<Extractor> = arrayOf(
-                com.lastwave.app.playback.dsd.DsdMedia3Extractor(),
+                com.lastwave.app.playback.dsd.DsdMedia3Extractor(
+                    modeProvider = { latestPlaybackSettings.dsdOutputMode },
+                    usbDacActiveProvider = { exclusiveUsbWanted() || exclusiveUsbOutput.isActive() },
+                ),
                 AiffMedia3Extractor(),
                 *defaults.createExtractors(),
             )
@@ -242,7 +247,10 @@ class MusicPlayer @Inject constructor(
                 uri: Uri,
                 responseHeaders: Map<String, List<String>>,
             ): Array<Extractor> = arrayOf(
-                com.lastwave.app.playback.dsd.DsdMedia3Extractor(),
+                com.lastwave.app.playback.dsd.DsdMedia3Extractor(
+                    modeProvider = { latestPlaybackSettings.dsdOutputMode },
+                    usbDacActiveProvider = { exclusiveUsbWanted() || exclusiveUsbOutput.isActive() },
+                ),
                 AiffMedia3Extractor(),
                 *defaults.createExtractors(uri, responseHeaders),
             )
@@ -449,6 +457,10 @@ class MusicPlayer @Inject constructor(
     val stopPlaybackOnTaskRemoved: Boolean
         get() = stopPlaybackOnTaskRemovedPref
     internal var activePlayer: ExoPlayer? = null
+        set(value) {
+            field = value
+            com.lastwave.app.playback.rhythm.FluidRhythmEngine.liveSink = value?.let { playerToSink[it] }
+        }
     internal var secondaryPlayer: ExoPlayer? = null
     internal var secondaryNativeEngine: NativeAudioEngine? = null
     internal var secondaryEffects: AudioEffectsEngine? = null
@@ -568,6 +580,20 @@ class MusicPlayer @Inject constructor(
     internal var lastCachedSysVolume: Int = 0
     @Volatile
     internal var lastSysVolumeCheckMs: Long = 0L
+
+    @Volatile
+    internal var pauseOnZeroVolumePref: Boolean = false
+
+    internal val zeroVolumePlaybackObserver: ZeroVolumePlaybackObserver by lazy {
+        ZeroVolumePlaybackObserver(
+            context = appContext,
+            audioManager = audioManager,
+            isPauseOnZeroVolumeEnabled = { pauseOnZeroVolumePref },
+            isPlaying = { _state.value.isPlaying },
+            onPausePlayback = { pauseInternal(focusInitiated = false, zeroVolumeInitiated = true) },
+            onResumePlayback = { resume() },
+        )
+    }
     // ---- App-owned audio focus -------------------------------------------------
     // The player is built with handleAudioFocus=false (see createPlayer), so
     // Media3 never answers a focus change itself. Its automatic handling parks
@@ -760,7 +786,7 @@ class MusicPlayer @Inject constructor(
             .setDefaultRequestProperties(NEUTRAL_MEDIA_HEADERS)
     }
 
-    private val cacheDataSourceFactory: CacheDataSource.Factory by lazy {
+    internal val cacheDataSourceFactory: CacheDataSource.Factory by lazy {
         val defaultDataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(appContext, httpUpstreamFactory)
         val chunkedUpstreamFactory = androidx.media3.datasource.DataSource.Factory {
             ChunkedRangeDataSource(defaultDataSourceFactory.createDataSource(), refresher = ::refreshRejectedYouTubeUrl)
@@ -818,6 +844,30 @@ class MusicPlayer @Inject constructor(
         if (refreshedYouTubeUrls.size > MAX_REFRESHED_URL_ENTRIES) refreshedYouTubeUrls.clear()
         refreshedYouTubeUrls[failedUrl] = replacement
         return replacement
+    }
+
+    /**
+     * The player's own read path for AutoMix analysis: cached and range-chunked
+     * for streams (same headers as playback), plain for local files. Null while
+     * the item is still an unresolved placeholder or its signed URL has expired.
+     */
+    private fun autoMixAnalysisInput(item: MediaItem): com.lastwave.app.playback.automix.analysis.AnalysisInput? {
+        val uri = item.localConfiguration?.uri ?: return null
+        if (uri.scheme == "lastwave") return null
+        val key = item.localConfiguration?.customCacheKey
+        val spec = DataSpec.Builder().setUri(uri).setKey(key).build()
+        if (uri.scheme != "http" && uri.scheme != "https") {
+            return com.lastwave.app.playback.automix.analysis.AnalysisInput(
+                androidx.media3.datasource.DefaultDataSource.Factory(appContext),
+                spec,
+            )
+        }
+        val stream = key?.let(preparedStreams::get) ?: preparedStreams.values.firstOrNull { it.url == uri.toString() }
+        if (stream?.isExpired() == true) return null
+        return com.lastwave.app.playback.automix.analysis.AnalysisInput(
+            cacheDataSourceFactory,
+            spec.withRequestHeaders(mediaRequestHeaders(stream)),
+        )
     }
 
     /** Headers for one media request, scoped to the stream that owns the URL. */
@@ -932,6 +982,10 @@ class MusicPlayer @Inject constructor(
             if (player === this@MusicPlayer.player) {
                 refresh(player)
             }
+        }
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            if (player !== this@MusicPlayer.player) return
+            _state.update { it.copy(repeatMode = repeatMode) }
         }
         override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
             if (player !== this@MusicPlayer.player) return
@@ -1056,6 +1110,8 @@ class MusicPlayer @Inject constructor(
             runCatching { autoMixCoordinator.get().setTransportPaused(!playWhenReady) }
         }
         override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+            // An AutoMix beat match stretches the deck; the user's speed has not changed.
+            if (autoMixCoordinator.get().userParametersFor(player) != null) return
             _state.update { it.copy(speed = playbackParameters.speed, pitch = playbackParameters.pitch) }
         }
         override fun onVolumeChanged(volume: Float) {
@@ -1137,12 +1193,17 @@ class MusicPlayer @Inject constructor(
                     queue = if (currentQueue.isNotEmpty()) currentQueue else it.queue,
                     isBuffering = true,
                     error = null,
+                    speed = userPlaybackSpeed,
+                    pitch = userPlaybackPitch,
                     audioCodec = stream?.audioCodec,
                     bitrateKbps = stream?.bitrateKbps,
                     isLossless = stream?.isLossless == true,
                     bitDepth = stream?.bitDepth,
                     samplingRateKHz = if (isSpatialAudioCodec(stream?.audioCodec)) 48.0 else stream?.samplingRateKHz,
                 )
+            }
+            if (!bitPerfectEnabled && (targetPlayer.playbackParameters.speed != userPlaybackSpeed || targetPlayer.playbackParameters.pitch != userPlaybackPitch)) {
+                runCatching { targetPlayer.playbackParameters = PlaybackParameters(userPlaybackSpeed, userPlaybackPitch) }
             }
                 decodedSampleRateHz = 0
                 stream?.let { s ->
@@ -1663,7 +1724,7 @@ class MusicPlayer @Inject constructor(
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
             ): androidx.media3.exoplayer.audio.AudioSink {
-                val bufferSizing = OutputBufferSizing()
+                val bufferSizing = OutputBufferSizing { userPlaybackSpeed }
                 fun pcmSink(floatOutput: Boolean) = DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(floatOutput)
                     .setEnableAudioTrackPlaybackParams(true)
@@ -1693,7 +1754,6 @@ class MusicPlayer @Inject constructor(
                     enhancedDelegate = enhancedSink,
                     fallbackDelegate = fallbackSink,
                     processor = NativePcmAudioProcessor(processorEngine),
-                    outputBufferSizing = bufferSizing,
                     onPlatformEffectsRequired = effects::setFallbackRequired,
                     usbOutput = if (handleAudioFocus) UsbBitPerfectOutput(audioManager) else null,
                     // The crossfade standby must not share the DAC. Its
@@ -1740,7 +1800,7 @@ class MusicPlayer @Inject constructor(
                     }
                     val isSpatial = isSpatialAudioCodec(_state.value.audioCodec)
                     createdSink.setBitPerfectRequested(!isSpatial && bitPerfectEnabled)
-                    createdSink.syncExclusiveUsb(handleAudioFocus && !isSpatial && exclusiveUsbWanted())
+                    createdSink.syncExclusiveUsb(handleAudioFocus && exclusiveUsbWanted())
                     createdSink.syncInternalDirect(handleAudioFocus && !isSpatial && internalDirectWanted())
                     audioSinks.add(createdSink)
                     runCatching {
@@ -1761,67 +1821,30 @@ class MusicPlayer @Inject constructor(
                 eventListener: AudioRendererEventListener,
                 out: ArrayList<Renderer>,
             ) {
-                // Hardware/platform Dolby Atmos & Spatial audio MediaCodec renderer:
-                // Placed ahead of FFmpeg so Android's native Dolby Atmos HAL and Spatializer
-                // decode E-AC-3 JOC with hardware dialogue normalization, full volume
-                // (no -8 dB FFmpeg downmix attenuation), and system spatial virtualization.
-                // Standard codecs (FLAC, Opus, AAC, MP3, Vorbis) return FORMAT_UNSUPPORTED_TYPE
-                // here so FFmpeg retains priority for them.
-                val dolbySpatialRenderer = object : MediaCodecAudioRenderer(
-                    context,
-                    mediaCodecSelector,
-                    enableDecoderFallback,
-                    eventHandler,
-                    eventListener,
-                    audioSink,
+                FfmpegCompat.appendAudioRenderers(
+                    context = context,
+                    mediaCodecSelector = mediaCodecSelector,
+                    enableDecoderFallback = enableDecoderFallback,
+                    audioSink = audioSink,
+                    eventHandler = eventHandler,
+                    eventListener = eventListener,
+                    out = out,
+                    onConfigureSpatialMediaFormat = ::configureDolbySpatialMediaFormat,
                 ) {
-                    override fun supportsFormat(
-                        mediaCodecSelector: MediaCodecSelector,
-                        format: androidx.media3.common.Format,
-                    ): Int {
-                        val mime = format.sampleMimeType?.lowercase().orEmpty()
-                        val isDolbyOrSpatial = mime.contains("eac3") || mime.contains("ec-3") ||
-                            mime.contains("ac-3") || mime.contains("ac3") || mime.contains("ac4") ||
-                            mime.contains("mha1") || mime.contains("mhm1")
-                        if (!isDolbyOrSpatial) {
-                            return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE)
-                        }
-                        return super.supportsFormat(mediaCodecSelector, format)
-                    }
-                }
-                out.add(dolbySpatialRenderer)
-
-                super.buildAudioRenderers(
-                    context,
-                    extensionRendererMode,
-                    mediaCodecSelector,
-                    enableDecoderFallback,
-                    audioSink,
-                    eventHandler,
-                    eventListener,
-                    out,
-                )
-                // Explicit software decoder fallback for MediaTek / ColorOS
-                if (FfmpegCompat.isUsable) try {
-                    // Direct dependency (org.jellyfin.media3:media3-ffmpeg-decoder):
-                    // construct it typed instead of via reflection.
-                    out.add(
-                        androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer(eventHandler, eventListener, audioSink),
+                    super.buildAudioRenderers(
+                        context,
+                        extensionRendererMode,
+                        mediaCodecSelector,
+                        enableDecoderFallback,
+                        audioSink,
+                        eventHandler,
+                        eventListener,
+                        out,
                     )
-                } catch (_: Throwable) {
                 }
             }
         }.apply {
-            // FFmpeg-first decoding, the Poweramp/VLC model: every codec the
-            // bundled GPL build supports (FLAC 24/96-192, Opus, AAC, MP3,
-            // Vorbis) decodes through the same battle-tested software path on
-            // every device, eliminating per-OEM platform codec bugs that
-            // surface as noise/distortion. setEnableDecoderFallback keeps the
-            // platform decoder for anything FFmpeg rejects.
-            setExtensionRendererMode(
-                if (FfmpegCompat.isUsable) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
-                else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
-            )
+            setExtensionRendererMode(FfmpegCompat.recommendedExtensionRendererMode())
             setEnableDecoderFallback(true)
             setEnableAudioTrackPlaybackParams(false)
             setMediaCodecSelector(accurateAudioMediaCodecSelector)
@@ -1862,6 +1885,7 @@ class MusicPlayer @Inject constructor(
                     override fun onAudioInputFormatChanged(
                         eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
                         format: androidx.media3.common.Format,
+                        decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
                     ) {
                         // Crossfade standby or background players must NEVER publish format or rate to active state.
                         if (!handleAudioFocus || (activePlayer != null && this@apply !== activePlayer)) return
@@ -1872,7 +1896,16 @@ class MusicPlayer @Inject constructor(
                         if (eventTime.windowIndex != currentMediaItemIndex) return
                         val rateHz = format.sampleRate
                         val sampleMime = format.sampleMimeType?.lowercase().orEmpty()
+                        val dsdLabel = format.label?.trim()?.uppercase()?.takeIf { it.startsWith("DSD") }
                         val detectedCodec = when {
+                            dsdLabel != null -> dsdLabel
+                            format.codecs.equals("dsd", ignoreCase = true) ||
+                                sampleMime.contains("dsd") || sampleMime.contains("dsf") || sampleMime.contains("dff") -> when (rateHz) {
+                                1_411_200 -> "DSD512"
+                                705_600 -> "DSD256"
+                                352_800 -> "DSD128"
+                                else -> "DSD64"
+                            }
                             sampleMime.contains("eac3") || sampleMime.contains("ec-3") ||
                                 sampleMime.contains("ac-3") || sampleMime.contains("ac3") -> "DOLBY ATMOS"
                             sampleMime.contains("mha1") || sampleMime.contains("mhm1") -> "SPATIAL AUDIO"
@@ -1925,12 +1958,15 @@ class MusicPlayer @Inject constructor(
                                         ((sourceDepth ?: 0) > 16 || rateHz > 48_000) -> "HI-RES FLAC"
                                     else -> detectedCodec
                                 }
+                                val isDsdCodec = detectedCodec.startsWith("DSD")
                                 val finalCodec = if (detectedCodec == "FLAC") {
                                     if (detectedBadge == "FLAC" && currentIsExplicit && updated.audioCodec?.contains("/") == true) {
                                         updated.audioCodec
                                     } else {
                                         detectedBadge
                                     }
+                                } else if (isDsdCodec) {
+                                    detectedCodec
                                 } else if (currentIsExplicit && updated.audioCodec != "FLAC" && updated.audioCodec != "HI-RES FLAC" && updated.audioCodec != "LOSSLESS") {
                                     updated.audioCodec
                                 } else {
@@ -1938,9 +1974,9 @@ class MusicPlayer @Inject constructor(
                                 }
                                 updated = updated.copy(
                                     audioCodec = finalCodec,
-                                    bitDepth = manifestDepth ?: updated.bitDepth ?: sourceDepth,
-                                    bitrateKbps = if (detectedCodec == "FLAC") (updated.bitrateKbps ?: bitrate) else (updated.bitrateKbps ?: bitrate ?: if (detectedCodec == "OPUS") 160 else null),
-                                    isLossless = detectedCodec == "FLAC",
+                                    bitDepth = if (isDsdCodec) 1 else (manifestDepth ?: updated.bitDepth ?: sourceDepth),
+                                    bitrateKbps = if (detectedCodec == "FLAC" || isDsdCodec) (updated.bitrateKbps ?: bitrate) else (updated.bitrateKbps ?: bitrate ?: if (detectedCodec == "OPUS") 160 else null),
+                                    isLossless = detectedCodec == "FLAC" || isDsdCodec,
                                 )
                             }
                             android.util.Log.i("MusicPlayer", "AudioInputFormatChanged: mime=${format.sampleMimeType}, rate=${rateHz}Hz, bitrate=${format.bitrate}, detectedCodec=$detectedCodec -> qualityPill=[codec=${updated.audioCodec}, depth=${updated.bitDepth}, bitrate=${updated.bitrateKbps}kbps, rate=${updated.samplingRateKHz}kHz]")
@@ -1960,6 +1996,7 @@ class MusicPlayer @Inject constructor(
                         .setUsage(C.USAGE_MEDIA)
                         .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                         .setAllowedCapturePolicy(C.ALLOW_CAPTURE_BY_ALL)
+                        .setSpatializationBehavior(C.SPATIALIZATION_BEHAVIOR_AUTO)
                         .build(),
                     /* handleAudioFocus = */ false,
                 )
@@ -1970,7 +2007,6 @@ class MusicPlayer @Inject constructor(
                         effects.attach(audioSessionId)
                         runCatching { systemEffectsBridge.onSessionChanged(audioSessionId) }
                         musicHapticsController.onAudioSessionIdChanged(audioSessionId)
-                        com.lastwave.app.playback.rhythm.FluidRhythmEngine.attachSession(audioSessionId)
                     }
                 })
             }.also { playerInstance ->
@@ -1997,6 +2033,9 @@ class MusicPlayer @Inject constructor(
         }
         updateBitPerfectState()
     }
+
+    @Volatile private var userPlaybackSpeed: Float = 1.0f
+    @Volatile private var userPlaybackPitch: Float = 1.0f
 
     internal val playerDelegate = ResettableLazy {
         createPlayer({ nativeAudioEngine.get() }, audioEffectsEngine, true)
@@ -2034,6 +2073,8 @@ class MusicPlayer @Inject constructor(
                     } ?: _state.value.repeatMode
                     val restoredSpeed = restoredSession.speed.coerceIn(0.25f, 3f)
                     val restoredPitch = restoredSession.pitch.coerceIn(0.25f, 3f)
+                    userPlaybackSpeed = restoredSpeed
+                    userPlaybackPitch = restoredPitch
                     restoredPlayer.playbackParameters = PlaybackParameters(
                         if (bitPerfectEnabled) 1f else restoredSpeed,
                         if (bitPerfectEnabled) 1f else restoredPitch,
@@ -2042,6 +2083,9 @@ class MusicPlayer @Inject constructor(
                 } else {
                     restoredPlayer.repeatMode = _state.value.repeatMode
                     restoredPlayer.shuffleModeEnabled = _state.value.shuffleEnabled
+                    if (!bitPerfectEnabled && (userPlaybackSpeed != 1f || userPlaybackPitch != 1f)) {
+                        restoredPlayer.playbackParameters = PlaybackParameters(userPlaybackSpeed, userPlaybackPitch)
+                    }
                 }
                 restoredPlayer.volume = appVolume
                 runCatching { nativeAudioEngine.get().setOutputVolume(if (bitPerfectEnabled) 1f else appVolume) }
@@ -2054,8 +2098,8 @@ class MusicPlayer @Inject constructor(
 
     @MainThread
     fun release() {
+        zeroVolumePlaybackObserver.unregister()
         cancelCrossfade()
-        com.lastwave.app.playback.rhythm.FluidRhythmEngine.detachSession()
         activePlayer?.removeListener(listener)
         activePlayer?.release()
         activePlayer = null
@@ -2066,6 +2110,7 @@ class MusicPlayer @Inject constructor(
     }
 
     init {
+        zeroVolumePlaybackObserver.register()
         applicationScope.launch {
             autoMixCoordinator.get().telemetry.collect { tel ->
                 _state.update { it.copy(deckBlendTelemetry = tel) }
@@ -2085,7 +2130,7 @@ class MusicPlayer @Inject constructor(
             }
             incoming.shuffleModeEnabled = outgoing.shuffleModeEnabled
             incoming.repeatMode = outgoing.repeatMode
-            incoming.playbackParameters = outgoing.playbackParameters
+            // Speed stays AutoMix's: a beat match runs the incoming deck at the matched tempo.
             crossfadeStandbyArmed = false
             crossfadeStandbyPreparing = false
             outgoingPlayer = outgoing
@@ -2106,6 +2151,8 @@ class MusicPlayer @Inject constructor(
             toStop?.stop()
             toStop?.clearMediaItems()
         }
+        autoMixCoord.analysisInput = ::autoMixAnalysisInput
+        autoMixCoord.deckSink = { deck -> playerToSink[deck]?.autoMixTaps }
         setupSpatializerListener()
         runCatching { restorePlaybackSession() }.getOrElse { error ->
             // A corrupt session or OEM media-stack failure must not become a
@@ -2193,10 +2240,14 @@ class MusicPlayer @Inject constructor(
 
                             val stream = nextItem?.localConfiguration?.customCacheKey?.let(preparedStreams::get)
                                 ?: preparedStreams.values.firstOrNull { it.url == nextItem?.localConfiguration?.uri?.toString() }
-                            val nextStreamUrl = stream?.url ?: nextItem?.localConfiguration?.uri?.toString()
 
-                            val transitionActive = crossfadeEnabled || autoMixCoordinator.get().isEnabled
-                            if (transitionActive && upcomingIdx != C.INDEX_UNSET && nextItem != null) {
+                            val repeatOne = player.repeatMode == Player.REPEAT_MODE_ONE ||
+                                _state.value.repeatMode == Player.REPEAT_MODE_ONE
+                            val transitionActive = !bitPerfectEnabled &&
+                                (crossfadeEnabled || autoMixCoordinator.get().isEnabled)
+                            if (transitionActive && !repeatOne && upcomingIdx != C.INDEX_UNSET &&
+                                upcomingIdx != player.currentMediaItemIndex && nextItem != null
+                            ) {
                                 val remainingMs = dur - pos
                                 if (dur > 0L && (pos > dur * 0.25f || remainingMs < 90_000L)) {
                                     val isNextNonPlaceholder = nextItem.localConfiguration?.uri?.scheme?.let { it != "lastwave" } == true
@@ -2214,8 +2265,11 @@ class MusicPlayer @Inject constructor(
                                         }
                                     } else {
                                         standbyOrCreate()
-                                        // A quality hot-swap owns the standby until it commits.
-                                        if (!hotSwapActive && (!crossfadeStandbyArmed || standbyIndex != upcomingIdx)) {
+                                        // A quality hot-swap owns the standby until it commits; during an
+                                        // AutoMix blend the "standby" is the old song still fading out.
+                                        if (!hotSwapActive && !autoMixCoordinator.get().isBlending &&
+                                            (!crossfadeStandbyArmed || standbyIndex != upcomingIdx)
+                                        ) {
                                             armCrossfadeStandby(upcomingIdx, nextItem)
                                         }
                                     }
@@ -2225,15 +2279,18 @@ class MusicPlayer @Inject constructor(
                             // Only the decoded stream length may time a mix:
                             // catalog metadata can describe another edit of the
                             // song and opened the blend halfway through it.
-                            autoMixCoordinator.get().onTrackProgressTick(
-                                primaryPlayer = player,
-                                // A quality hot-swap is playing this same song on the standby.
-                                secondaryPlayer = currentStandby().takeUnless { hotSwapActive },
-                                currentTrack = _state.value.current,
-                                nextTrack = nextTrk,
-                                positionMs = runCatching { player.currentPosition }.getOrDefault(pos).coerceAtLeast(0L),
-                                durationMs = player.duration.takeIf { it > 0L } ?: 0L,
-                                nextTrackStreamUrl = nextStreamUrl,
+                            autoMixCoordinator.get().onTick(
+                                com.lastwave.app.playback.automix.engine.DualDeckTransportCoordinator.Tick(
+                                    primary = player,
+                                    // A quality hot-swap is playing this same song on the standby.
+                                    standby = currentStandby().takeUnless { hotSwapActive },
+                                    current = _state.value.current,
+                                    currentItem = player.currentMediaItem,
+                                    next = nextTrk,
+                                    nextItem = nextItem,
+                                    positionMs = runCatching { player.currentPosition }.getOrDefault(pos).coerceAtLeast(0L),
+                                    durationMs = player.duration.takeIf { it > 0L } ?: 0L,
+                                ),
                             )
                             if (updateCrossfade(pos)) {
                                 cadenceMs = 60L
@@ -2470,6 +2527,7 @@ class MusicPlayer @Inject constructor(
                 autoplaySimilarEnabled = settings.autoplaySimilarEnabled
                 crossfadeDurationMs = settings.crossfadeSeconds.coerceIn(1, 12) * 1000L
                 stopPlaybackOnTaskRemovedPref = settings.stopPlaybackOnTaskRemoved
+                pauseOnZeroVolumePref = settings.pauseOnZeroVolume
                 if (settings.wifiStreamingQuality != previousPlaybackSettings.wifiStreamingQuality ||
                     settings.cellularStreamingQuality != previousPlaybackSettings.cellularStreamingQuality
                 ) {
@@ -2510,7 +2568,11 @@ class MusicPlayer @Inject constructor(
                 }
                 if (playerDelegate.isInitialized()) {
                     onMain {
-                        if (!crossfadeEnabled || bitPerfectEnabled) cancelCrossfade()
+                        // Any settings write (even the volume) lands here: an AutoMix arm/blend has its own gates.
+                        val autoMixActive = autoMixCoordinator.get().isEnabled
+                        if (bitPerfectEnabled || (!crossfadeEnabled && (!autoMixActive || _state.value.isCrossfading))) {
+                            cancelCrossfade(endAutoMix = false)
+                        }
                         if (bitPerfectEnabled) {
                             // Tempo stretch resamples, which defeats bit-perfect.
                             // Volume is left alone: the direct sinks scale it in
@@ -2541,6 +2603,7 @@ class MusicPlayer @Inject constructor(
         applicationScope.launch(Dispatchers.Main.immediate) {
             jamRepository.get().sessionState.collect { session ->
                 val isJam = session is com.lastwave.app.data.jam.JamSessionState.Active
+                autoMixCoordinator.get().setJamActive(isJam)
                 if (isJam != _state.value.isJamActive) {
                     _state.update { it.copy(isJamActive = isJam) }
                 }
@@ -2617,6 +2680,8 @@ class MusicPlayer @Inject constructor(
         startPositionMs: Long = 0L,
         playWhenReady: Boolean = true,
     ) {
+        if (playWhenReady && zeroVolumePlaybackObserver.shouldBlockPlayAction()) return
+        zeroVolumePlaybackObserver.onManualAction()
         pendingRestoredSession = null
         disableDiscoverQueue()
         disableRadioQueue()
@@ -2752,6 +2817,8 @@ class MusicPlayer @Inject constructor(
         startShuffled: Boolean = false,
         playWhenReady: Boolean = true,
     ) {
+        if (playWhenReady && zeroVolumePlaybackObserver.shouldBlockPlayAction()) return
+        if (playWhenReady) zeroVolumePlaybackObserver.onManualAction()
         val selectedTrack = tracks[selectedIndex].withYoutubeArtwork()
         PlaybackStartupLog.begin(
             trackId = selectedTrack.internalTrackId?.takeIf { it.isNotBlank() } ?: selectedTrack.videoId.orEmpty(),
@@ -2781,8 +2848,6 @@ class MusicPlayer @Inject constructor(
         onMain {
             if (generation != playRequestGeneration.get()) return@onMain
             ensureForegroundService()
-            // drop any running automix blend, the old decks are going away
-            autoMixCoordinator.get().cancelTransition(revertToPrimary = true)
             cancelCrossfade()
             losslessBypassMediaIds.clear()
             errorRetryCount = 0
@@ -2866,6 +2931,9 @@ class MusicPlayer @Inject constructor(
                         player.shuffleModeEnabled = false
                     }
                     player.repeatMode = _state.value.repeatMode
+                    if (!bitPerfectEnabled && (userPlaybackSpeed != 1f || userPlaybackPitch != 1f)) {
+                        runCatching { player.playbackParameters = PlaybackParameters(userPlaybackSpeed, userPlaybackPitch) }
+                    }
                     PlaybackStartupLog.prepareStart()
                     resetRenderWatchdog()
                     player.prepare()
@@ -3163,6 +3231,8 @@ class MusicPlayer @Inject constructor(
     }
 
     fun resume() = onMain {
+        if (zeroVolumePlaybackObserver.shouldBlockPlayAction()) return@onMain
+        zeroVolumePlaybackObserver.onManualAction()
         // An explicit resume replaces any focus-induced pause we owed.
         focusPauseAwaitingRecovery = false
         exclusiveUsbOutput.setPaused(false)
@@ -3241,7 +3311,10 @@ class MusicPlayer @Inject constructor(
      *   request, so abandoning it here would strand [pauseForAudioFocus]'s
      *   recovery and a brief interruption would never resume.
      */
-    private fun pauseInternal(focusInitiated: Boolean) {
+    private fun pauseInternal(focusInitiated: Boolean, zeroVolumeInitiated: Boolean = false) {
+        if (!zeroVolumeInitiated) {
+            zeroVolumePlaybackObserver.onManualAction()
+        }
         // A deliberate pause supersedes a focus-induced one, so a later
         // AUDIOFOCUS_GAIN must not resurrect playback the user stopped.
         if (!focusInitiated) focusPauseAwaitingRecovery = false
@@ -3449,15 +3522,13 @@ class MusicPlayer @Inject constructor(
         return _state.value.positionMs
     }
     fun seekTo(positionMs: Long) = onMain {
+        zeroVolumePlaybackObserver.onManualAction()
         if (isCasting) {
             castPlayback?.seek(positionMs.coerceAtLeast(0))
             return@onMain
         }
-        if (autoMixCoordinator.get().isEnabled) {
-            autoMixCoordinator.get().handleSeekEvent(positionMs.coerceAtLeast(0))
-        } else {
-            cancelCrossfade()
-        }
+        // Before an AutoMix hand-over the seek is in the old song (revert), after it in the new one (commit).
+        cancelCrossfade()
         cancelActiveUpgrade()
         currentTrackCacheJob?.cancel()
         currentTrackCacheJob = null
@@ -3686,6 +3757,7 @@ class MusicPlayer @Inject constructor(
         }
     }
     fun previous() = onMain {
+        zeroVolumePlaybackObserver.onManualAction()
         if (isCasting) {
             if (_state.value.positionMs > 5_000) seekTo(0)
             else seekToQueueItem(previousQueueIndex(_state.value))
@@ -3748,6 +3820,7 @@ class MusicPlayer @Inject constructor(
     }
 
     fun next() = onMain {
+        zeroVolumePlaybackObserver.onManualAction()
         if (isCasting) {
             seekToQueueItem(nextQueueIndex(_state.value))
             return@onMain
@@ -3931,12 +4004,15 @@ class MusicPlayer @Inject constructor(
             player.playbackParameters.speed < 2f -> 2f
             else -> 0.75f
         }
+        userPlaybackSpeed = next
         player.setPlaybackSpeed(next)
     }
 
     fun setPlaybackParameters(speed: Float, pitch: Float) = onMain {
         val clampedSpeed = speed.coerceIn(0.25f, 3.0f)
         val clampedPitch = pitch.coerceIn(0.25f, 3.0f)
+        userPlaybackSpeed = clampedSpeed
+        userPlaybackPitch = clampedPitch
         if (isCasting) {
             castPlayback?.setSpeed(clampedSpeed)
             _state.update { it.copy(speed = clampedSpeed, pitch = clampedPitch) }
@@ -4001,13 +4077,12 @@ class MusicPlayer @Inject constructor(
      *   time the app opens.
      */
     fun stopAndClear(clearSession: Boolean = true) = onMain {
+        zeroVolumePlaybackObserver.onManualAction()
         // Captured before the player is torn down: afterwards it reports 0.
         val stoppedAtMs = runCatching {
             if (playerDelegate.isInitialized() && player.mediaItemCount > 0) player.currentPosition else null
         }.getOrNull()?.takeIf { it > 0L } ?: _state.value.positionMs
         if (isCasting) castPlayback?.disconnect()
-        // stop any automix blend too
-        autoMixCoordinator.get().cancelTransition(revertToPrimary = true)
         cancelCrossfade()
         resolutionRequests.values.forEach { it.second.cancel() }
         resolutionRequests.clear()
@@ -6366,11 +6441,11 @@ class MusicPlayer @Inject constructor(
         } else {
             STARTUP_PROVIDER_PROBE_MS
         }
-        suspend fun awaitProvider(): ResolvedStream? = try {
-            if (!startDirect) {
-                awaitProviderUntil(startedAtMs + STARTUP_PROVIDER_RESOLVE_MS)
-            } else {
-                awaitProviderUntil(startedAtMs + BEST_QUALITY_WAIT_MS)
+        suspend fun awaitProvider(fallbackFailed: Boolean): ResolvedStream? = try {
+            when {
+                fallbackFailed -> awaitProviderUntil(startedAtMs + LOSSLESS_BACKGROUND_BUDGET_MS)
+                !startDirect -> awaitProviderUntil(startedAtMs + STARTUP_PROVIDER_RESOLVE_MS)
+                else -> awaitProviderUntil(startedAtMs + BEST_QUALITY_WAIT_MS)
                     ?: if (addonMatched.matched) awaitProviderUntil(startedAtMs + BEST_QUALITY_RESOLVING_WAIT_MS) else null
             }
         } catch (error: CancellationException) {
@@ -6414,13 +6489,14 @@ class MusicPlayer @Inject constructor(
         }
         // DASH/DRM cannot be byte-probed; it needs a full player prepare.
         fun isManifest(stream: ResolvedStream) = !stream.mimeType.startsWith("audio/") || stream.segmentedDrm != null
-        suspend fun playableProvider(acceptManifest: Boolean): ResolvedStream? = awaitProvider()?.takeIf {
-            isStreamAllowedForQuality(it, requestedQuality, miscSnapshot) &&
-                (if (isManifest(it)) acceptManifest else isProviderReadyForStartup(it, probeTimeoutMs()))
-        }
-        // Whichever source is playable first starts. Waiting on the provider
-        // first cost 5 s per song whenever it answered slowly or with an error;
-        // the upgrade job promotes to the chosen tier once that is playable.
+        suspend fun playableProvider(acceptManifest: Boolean, fallbackFailed: Boolean = false): ResolvedStream? =
+            awaitProvider(fallbackFailed)?.takeIf {
+                val probeTimeout = if (fallbackFailed) STARTUP_PROVIDER_RESOLVE_MS else probeTimeoutMs()
+                isStreamAllowedForQuality(it, requestedQuality, miscSnapshot) &&
+                    (if (isManifest(it)) acceptManifest else isProviderReadyForStartup(it, probeTimeout))
+            }
+        // The addon gets the longer wait only after YouTube fails, since
+        // there is no playable fallback to start while the addon resolves.
         try {
             ((if (startDirect) {
                 racePlaybackCandidates(
@@ -6437,7 +6513,7 @@ class MusicPlayer @Inject constructor(
                         second = { playableProvider(acceptManifest = false) },
                     )
                 },
-            ) ?: playableProvider(acceptManifest = true)
+            ) ?: playableProvider(acceptManifest = true, fallbackFailed = true)
                 ?: fallback.await().getOrThrow()).also { winner ->
                 if (claimPlayback) {
                     val name = when {
@@ -6908,7 +6984,7 @@ class MusicPlayer @Inject constructor(
         val token = if (claimPlayback) streamResolver.playback.claim(identity) else null
         if (claimPlayback) PlaybackStartupLog.extractStart()
         val candidate = try {
-            innerTube.resolveAudioStream(identity.youtubeVideoId, maxBitrateBps)
+            withContext(DeferredStreamProbe) { innerTube.resolveAudioStream(identity.youtubeVideoId, maxBitrateBps) }
         } finally {
             if (claimPlayback) PlaybackStartupLog.extractEnd()
         }
@@ -7829,6 +7905,41 @@ class MusicPlayer @Inject constructor(
         return true
     }
 
+    /**
+     * Configures the platform Dolby/Spatial MediaCodec decoder format.
+     * When routing to a 2-channel USB DAC (which cannot negotiate multi-channel audio)
+     * or on endpoints where the system Spatializer cannot spatialize the stream,
+     * instructs the decoder to fold the spatial mix into 2-channel stereo with
+     * hardware dialogue normalization and dynamic range control.
+     */
+    private fun configureDolbySpatialMediaFormat(
+        mediaFormat: MediaFormat,
+        format: androidx.media3.common.Format,
+    ) {
+        val isUsbDac = routedDacDeviceId != null ||
+            usbDacMonitor.state.value.dac != null ||
+            audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.any { it.isUsbOutput() } == true
+        val canSpatialize = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S_V2) {
+            val sp = audioManager?.spatializer
+            val attr = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setSpatializationBehavior(android.media.AudioAttributes.SPATIALIZATION_BEHAVIOR_AUTO)
+                .build()
+            val fmt = android.media.AudioFormat.Builder()
+                .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(format.sampleRate.takeIf { it > 0 } ?: 48000)
+                .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_5POINT1)
+                .build()
+            sp?.isEnabled == true && sp.isAvailable && sp.canBeSpatialized(attr, fmt)
+        } else {
+            false
+        }
+        if (exclusiveUsbWanted() || isUsbDac || !canSpatialize) {
+            mediaFormat.setInteger(MediaFormat.KEY_MAX_OUTPUT_CHANNEL_COUNT, 2)
+        }
+    }
+
     /** A muted player with the real decode path, for testing a stream off-air. */
     private fun buildSilentPlayer(probe: SwapPcmProbe? = null): ExoPlayer {
         val resolvingFactory = ResolvingDataSource.Factory(cacheDataSourceFactory) { dataSpec ->
@@ -7867,45 +7978,30 @@ class MusicPlayer @Inject constructor(
                 eventListener: AudioRendererEventListener,
                 out: ArrayList<Renderer>,
             ) {
-                val immersiveRenderer = object : MediaCodecAudioRenderer(
-                    context,
-                    mediaCodecSelector,
-                    enableDecoderFallback,
-                    eventHandler,
-                    eventListener,
-                    audioSink,
+                FfmpegCompat.appendAudioRenderers(
+                    context = context,
+                    mediaCodecSelector = mediaCodecSelector,
+                    enableDecoderFallback = enableDecoderFallback,
+                    audioSink = audioSink,
+                    eventHandler = eventHandler,
+                    eventListener = eventListener,
+                    out = out,
+                    onConfigureSpatialMediaFormat = ::configureDolbySpatialMediaFormat,
                 ) {
-                    override fun supportsFormat(
-                        mediaCodecSelector: MediaCodecSelector,
-                        format: androidx.media3.common.Format,
-                    ): Int {
-                        val mime = format.sampleMimeType?.lowercase().orEmpty()
-                        val isImmersive = mime.contains("eac3") || mime.contains("ec-3") ||
-                            mime.contains("ac-3") || mime.contains("ac3") || mime.contains("ac4") ||
-                            mime.contains("mha1") || mime.contains("mhm1")
-                        if (!isImmersive) {
-                            return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE)
-                        }
-                        return super.supportsFormat(mediaCodecSelector, format)
-                    }
+                    super.buildAudioRenderers(
+                        context,
+                        extensionRendererMode,
+                        mediaCodecSelector,
+                        enableDecoderFallback,
+                        audioSink,
+                        eventHandler,
+                        eventListener,
+                        out,
+                    )
                 }
-                out.add(immersiveRenderer)
-                super.buildAudioRenderers(
-                    context,
-                    extensionRendererMode,
-                    mediaCodecSelector,
-                    enableDecoderFallback,
-                    audioSink,
-                    eventHandler,
-                    eventListener,
-                    out,
-                )
             }
         }.apply {
-            setExtensionRendererMode(
-                if (FfmpegCompat.isUsable) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
-                else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
-            )
+            setExtensionRendererMode(FfmpegCompat.recommendedExtensionRendererMode())
             setEnableDecoderFallback(true)
             setMediaCodecSelector(accurateAudioMediaCodecSelector)
         }
@@ -8076,12 +8172,6 @@ class MusicPlayer @Inject constructor(
             // opened a 24/96 upgrade at 48 kHz. Null opens at the stream's own rate.
             val standbySink = playerToSink[standby]
             standbySink?.setOutputSampleRateOverride(null)
-            // Media3 sizes the AudioTrack for 8x speed (2.7 s here, 6 s over
-            // Bluetooth), and a skip only shows once that much has played out:
-            // two skips were 6.5 s of an 8.5 s line-up. Sized for the speed in
-            // use, the muted deck starts sooner and a skip lands in well under
-            // a second. The deck keeps this track's buffer after it goes live.
-            standbySink?.outputBufferSizing?.speedHeadroom = live.playbackParameters.speed.coerceAtLeast(1f).toDouble()
             standby.setMediaItems(queue, index, (live.currentPosition + lagMs + HOT_SWAP_SEEK_LEAD_MS).coerceAtLeast(0L))
             standby.prepare()
 
@@ -8210,7 +8300,6 @@ class MusicPlayer @Inject constructor(
             activePlayer = standby
             musicHapticsController.bindToPlayer(standby)
             musicHapticsController.onAudioSessionIdChanged(standby.audioSessionId)
-            com.lastwave.app.playback.rhythm.FluidRhythmEngine.attachSession(standby.audioSessionId)
             standby.addListener(listener)
             committed = true
             standbyQueue = emptyList()
@@ -8251,8 +8340,6 @@ class MusicPlayer @Inject constructor(
             }
             return OverlapSwap.Swapped(roundsUsed, driftMs)
         } finally {
-            // Only this swap's AudioTrack: the deck's next track sizes as usual.
-            playerToSink[standby]?.outputBufferSizing?.speedHeadroom = null
             if (!committed) {
                 runCatching {
                     standby.stop()
@@ -8919,8 +9006,8 @@ class MusicPlayer @Inject constructor(
             durationMs = dur,
             shuffleEnabled = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
-            speed = player.playbackParameters.speed,
-            pitch = player.playbackParameters.pitch,
+            speed = (autoMixCoordinator.get().userParametersFor(player) ?: player.playbackParameters).speed,
+            pitch = (autoMixCoordinator.get().userParametersFor(player) ?: player.playbackParameters).pitch,
             bitrateKbps = previous.bitrateKbps.takeIf { hasExplicitPrevious } ?: streamForCurrent?.bitrateKbps,
             audioCodec = previous.audioCodec.takeIf { hasExplicitPrevious } ?: streamForCurrent?.audioCodec,
             isLossless = (previous.isLossless && sameTrack) || (streamForCurrent?.isLossless == true),

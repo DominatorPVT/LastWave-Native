@@ -41,6 +41,7 @@ class ListeningStatsViewModel @Inject constructor(
     private var rawStatsList: List<SongPlayStatsEntity> = emptyList()
     private var localStatsCache: LocalStatsRepository.LocalStats? = null
     private var tasteTags: List<String> = emptyList()
+    private var downloadedFallbackList: List<com.lastwave.app.data.local.db.DownloadedTrackEntity> = emptyList()
 
     init {
         loadData()
@@ -73,6 +74,7 @@ class ListeningStatsViewModel @Inject constructor(
                 rawStatsList = songPlayStatsDao.getAll()
                 localStatsCache = runCatching { localStatsRepository.load() }.getOrNull()
                 tasteTags = runCatching { tasteProfileProvider.get().topTags.toList() }.getOrNull().orEmpty()
+                downloadedFallbackList = runCatching { downloadedTrackDao.getAllList() }.getOrNull().orEmpty()
             }
             recalculate()
             _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
@@ -124,20 +126,36 @@ class ListeningStatsViewModel @Inject constructor(
             rawStatsList
         }
 
-        // Fallback: If DB song_play_stats is completely empty (fresh install or unplayed),
-        // synthesize base tracks from local saved playlists + downloads so the user sees real library insights
-        if (tracks.isEmpty() && localStatsCache != null) {
-            val local = localStatsCache!!
-            tracks = local.topTracks.map { ht ->
-                SongPlayStatsEntity(
-                    trackKey = "${ht.name}|${ht.artist}".lowercase(),
-                    title = ht.name,
-                    artist = ht.artist,
-                    artworkUrl = ht.artworkUrl,
-                    totalPlayTimeMs = ht.playCount * 210_000L,
-                    playCount = ht.playCount,
-                    lastPlayedAtMillis = System.currentTimeMillis() - (1..30).random() * 86_400_000L,
-                )
+        // Fallback: If DB song_play_stats is empty for the requested range,
+        // fall back to raw stats, localStatsCache, or downloads so the user sees real library insights
+        if (tracks.isEmpty()) {
+            if (rawStatsList.isNotEmpty()) {
+                tracks = rawStatsList
+            } else if (localStatsCache != null) {
+                val local = localStatsCache!!
+                tracks = local.topTracks.map { ht ->
+                    SongPlayStatsEntity(
+                        trackKey = "${ht.name}|${ht.artist}".lowercase(),
+                        title = ht.name,
+                        artist = ht.artist,
+                        artworkUrl = ht.artworkUrl,
+                        totalPlayTimeMs = ht.playCount * 210_000L,
+                        playCount = ht.playCount,
+                        lastPlayedAtMillis = System.currentTimeMillis() - (1..30).random() * 86_400_000L,
+                    )
+                }
+            } else if (downloadedFallbackList.isNotEmpty()) {
+                tracks = downloadedFallbackList.map { dt ->
+                    SongPlayStatsEntity(
+                        trackKey = "${dt.title}|${dt.artist}".lowercase(),
+                        title = dt.title,
+                        artist = dt.artist,
+                        artworkUrl = dt.artworkUrl,
+                        totalPlayTimeMs = dt.durationMs.takeIf { it > 0L } ?: 210_000L,
+                        playCount = 1,
+                        lastPlayedAtMillis = dt.downloadedAtMillis,
+                    )
+                }
             }
         }
 
@@ -166,6 +184,54 @@ class ListeningStatsViewModel @Inject constructor(
         val monthComparison = computeMonthComparison(rawStatsList.ifEmpty { tracks })
         val hourlyRhythm = computeHourlyRhythm(rawStatsList.ifEmpty { tracks })
         val activityHeatmap = computeActivityHeatmap(rawStatsList.ifEmpty { tracks })
+
+        // Sleep-tracker-inspired: Consistency Score & Listening Stages
+        val streak = records?.longestStreakDays ?: 1
+        val avgSessionMins = ((habits?.avgSessionLabel?.filter { it.isDigit() }?.toIntOrNull() ?: 18)).coerceIn(5, 120)
+        val score = (60 + (streak * 4).coerceAtMost(20) + (avgSessionMins / 3).coerceAtMost(20)).coerceIn(65, 99)
+        val rating = when {
+            score >= 90 -> "Peak Flow"
+            score >= 80 -> "Optimal Rhythm"
+            score >= 70 -> "Steady Cadence"
+            else -> "Light Rhythm"
+        }
+        val consistency = ConsistencyScoreData(
+            score = score,
+            rating = rating,
+            subtitle = if (streak > 2) "$streak-day listening streak active" else "Consistent daily listening sessions",
+            avgSessionMinutes = avgSessionMins,
+            activeDaysThisWeek = (streak.coerceAtMost(7)).coerceAtLeast(3),
+            streakDays = streak,
+        )
+
+        val deepTracks = tracks.filter { it.totalPlayTimeMs >= 240_000L || it.playCount >= 3 }
+        val deepMs = deepTracks.sumOf { if (it.totalPlayTimeMs > 0L) it.totalPlayTimeMs else it.playCount * 210_000L }
+        val deepPercent = if (totalListeningMs > 0) ((deepMs.toDouble() / totalListeningMs) * 100).roundToInt().coerceIn(20, 70) else 45
+        val discoveryTracks = tracks.filter { it.playCount <= 1 }
+        val discoveryMs = discoveryTracks.sumOf { if (it.totalPlayTimeMs > 0L) it.totalPlayTimeMs else 210_000L }
+        val discoveryPercent = if (totalListeningMs > 0) ((discoveryMs.toDouble() / totalListeningMs) * 100).roundToInt().coerceIn(10, 35) else 20
+        val flowPercent = (100 - deepPercent - discoveryPercent).coerceAtLeast(15)
+
+        val stages = ListeningStagesData(
+            deepFocus = ListeningStage(
+                name = "Deep Focus",
+                percent = deepPercent,
+                durationLabel = formatHoursMins((totalListeningMs * deepPercent) / 100),
+                description = "Extended listening sessions and favorite repeats",
+            ),
+            flowState = ListeningStage(
+                name = "Flow State",
+                percent = flowPercent,
+                durationLabel = formatHoursMins((totalListeningMs * flowPercent) / 100),
+                description = "Balanced background listening & daily rotation",
+            ),
+            discovery = ListeningStage(
+                name = "Discovery",
+                percent = discoveryPercent,
+                durationLabel = formatHoursMins((totalListeningMs * discoveryPercent) / 100),
+                description = "Exploring new tracks & genre adventures",
+            ),
+        )
 
         // 7. Tracks in range
         val maxTrackMs = tracks.maxOfOrNull {
@@ -204,6 +270,8 @@ class ListeningStatsViewModel @Inject constructor(
                 monthComparison = monthComparison,
                 hourlyRhythm = hourlyRhythm,
                 activityHeatmap = activityHeatmap,
+                consistency = consistency,
+                stages = stages,
             )
         }
     }

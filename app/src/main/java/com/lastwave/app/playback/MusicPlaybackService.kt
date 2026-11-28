@@ -99,6 +99,7 @@ internal const val ACTION_NEXT = "com.lastwave.app.playback.NEXT"
 internal const val ACTION_LIKE = "com.lastwave.app.playback.LIKE"
 internal const val ACTION_SHUFFLE = "com.lastwave.app.playback.SHUFFLE"
 internal const val ACTION_REPEAT = "com.lastwave.app.playback.REPEAT"
+internal const val ACTION_TOGGLE_REPEAT = "com.lastwave.app.playback.TOGGLE_REPEAT"
 internal const val ACTION_STOP = "com.lastwave.app.playback.STOP"
 
 internal val TOPIC_SUFFIX_REGEX = Regex("""(?i)\s*-\s*topic$""")
@@ -142,6 +143,7 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
     @Inject lateinit var trackLikeController: TrackLikeController
     @Inject lateinit var playlistRepository: PlaylistRepository
     @Inject lateinit var jamPlaybackSync: com.lastwave.app.playback.jam.JamPlaybackSync
+    @Inject lateinit var discordPresenceManager: com.lastwave.app.presence.DiscordPresenceManager
 
     // SupervisorJob stops sibling failure propagation; the handler below
     // additionally stops an unexpected exception in any fire-and-forget
@@ -281,6 +283,7 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
                     override fun onCustomAction(action: String?, extras: Bundle?) {
                         when (action) {
                             ACTION_LIKE -> toggleNotificationLike()
+                            ACTION_REPEAT, ACTION_TOGGLE_REPEAT -> musicPlayer.cycleRepeatMode()
                             ACTION_SHUFFLE -> musicPlayer.toggleShuffle()
                             OriginOsMusicCard.ACTION_PLAY_MODE ->
                                 setOriginOsLoopMode(extras?.getInt(OriginOsMusicCard.KEY_LOOP_MODE) ?: 0)
@@ -673,7 +676,7 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
             ACTION_NEXT -> musicPlayer.next()
             ACTION_LIKE -> toggleNotificationLike()
             ACTION_SHUFFLE -> musicPlayer.toggleShuffle()
-            ACTION_REPEAT -> musicPlayer.cycleRepeatMode()
+            ACTION_REPEAT, ACTION_TOGGLE_REPEAT -> musicPlayer.cycleRepeatMode()
             ACTION_STOP -> musicPlayer.stopAndClear()
         }
         return START_NOT_STICKY
@@ -687,13 +690,23 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
         // foreground service whenever a track is loaded (even paused), and a
         // foreground service survives task removal. So the swipe behavior is
         // handled explicitly here.
+        val playerState = musicPlayer.state.value
+        val activelyPlaying = playerState.isPlaying || playerState.isBuffering
         val shouldStop = musicPlayer.stopPlaybackOnTaskRemoved ||
-            musicPlayer.state.value.current == null
+            playerState.current == null ||
+            !activelyPlaying
         if (shouldStop) {
             // clearSession = false keeps the last queue/track restorable on the
             // next launch while still stopping audio, notification, cast and
             // wake/wifi locks immediately.
             musicPlayer.stopAndClear(clearSession = false)
+            if (::discordPresenceManager.isInitialized) {
+                discordPresenceManager.onTaskRemoved(keepWhilePlaying = false)
+            }
+        } else {
+            if (::discordPresenceManager.isInitialized) {
+                discordPresenceManager.onTaskRemoved(keepWhilePlaying = true)
+            }
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -702,6 +715,9 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
         // Safety net: if the service is torn down while the singleton player is
         // still producing audio (an OEM stop, a system-initiated service stop
         // or a missed task-removal path), never leave orphaned playback behind.
+        if (::discordPresenceManager.isInitialized) {
+            discordPresenceManager.clearOnRemoval()
+        }
         val playerState = musicPlayer.state.value
         if (playerState.isPlaying || playerState.isBuffering) {
             musicPlayer.stopAndClear(clearSession = false)
@@ -760,6 +776,7 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
         const val ACTION_LIKE = "com.lastwave.app.playback.LIKE"
         const val ACTION_SHUFFLE = "com.lastwave.app.playback.SHUFFLE"
         const val ACTION_REPEAT = "com.lastwave.app.playback.REPEAT"
+        const val ACTION_TOGGLE_REPEAT = "com.lastwave.app.playback.TOGGLE_REPEAT"
         const val ACTION_STOP = "com.lastwave.app.playback.STOP"
     }
 }

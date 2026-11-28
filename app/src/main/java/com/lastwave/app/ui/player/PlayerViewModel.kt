@@ -407,6 +407,8 @@ class PlayerViewModel @Inject constructor(
     private val _toastMessage = MutableSharedFlow<String>()
     val toastMessage = _toastMessage.asSharedFlow()
 
+    val snackbarEvent = player.zeroVolumePlaybackObserver.snackbarEvent
+
     private val _liveLyricsOffsetMs = MutableStateFlow<Long?>(null)
     val liveLyricsOffsetMs: StateFlow<Long> = combine(
         _liveLyricsOffsetMs,
@@ -781,6 +783,12 @@ class PlayerViewModel @Inject constructor(
                     )
                 } else result.lines.filterNot {
                     com.lastwave.app.data.lyrics.LyricsSanitizer.shouldSuppress(it.text)
+                }
+                if (result.isSynced && !result.isInstrumental) {
+                    // The OriginOS music card shows the same lyrics as this screen.
+                    (wanted ?: player.state.value.current)?.let {
+                        com.lastwave.app.playback.OriginOsMusicCard.publishPlayerLyrics(it, lines)
+                    }
                 }
                 _lyricsState.value = LyricsUiState.Success(
                     lines = lines,

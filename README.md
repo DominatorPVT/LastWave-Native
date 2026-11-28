@@ -22,6 +22,10 @@
   <a href="https://trendshift.io/repositories/197973?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-197973" target="_blank" rel="noopener noreferrer">
     <img src="https://trendshift.io/api/badge/trendshift/repositories/197973/weekly?language=Kotlin" alt="Clash-Projects%2FLastWave-Native | Trendshift" width="250" height="55" />
   </a>
+  &nbsp;
+  <a href="https://fmhy.net/mobile#youtube-music" target="_blank" rel="noopener noreferrer">
+    <img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Clash-Projects%2FLastWave-Native | FMHY" height="55" />
+  </a>
 </p>
 </div>
 
@@ -48,7 +52,6 @@ For audio lovers, LastWave packs Bit-Perfect USB DAC output, Lossless FLAC addon
 #### Playback
 - Stream any track or video from YouTube Music
 - Background playback with lockscreen & Android Auto controls
-- Native Android TV / Google TV (Leanback) home with D-pad navigation
 - High-res audio downloads with embedded tags & `.lrc` lyrics
 - Download & cache for offline listening
 - Skip silence & sleep timer

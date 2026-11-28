@@ -3,6 +3,7 @@
 package com.lastwave.app.ui.player
 
 import com.lastwave.app.data.local.SeekbarStyle
+import com.lastwave.app.ui.player.automix.rememberAutoMixWaveforms
 import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import com.lastwave.app.data.playlist.isLikedIn
@@ -30,6 +31,7 @@ import com.lastwave.app.playback.haptics.MusicHapticsIntensity
 import com.lastwave.app.playback.haptics.MusicHapticsMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
@@ -230,8 +232,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -371,6 +375,14 @@ fun PlayerHost(
     @Suppress("NAME_SHADOWING")
     val hideMiniPlayer = hideMiniPlayer || webContentScreen
     val state by viewModel.chromeState.collectAsStateWithLifecycle()
+    val autoMixView = state.deckBlendTelemetry.view
+    if (autoMixView != null) {
+        // Prepare cue windows while the mini player is shown, before the popup can be tapped.
+        val autoMixQueue = remember(autoMixView.outgoing, autoMixView.incoming, autoMixView.cueOutMs) {
+            viewModel.player.state.value.queue
+        }
+        rememberAutoMixWaveforms(autoMixView, viewModel.player, autoMixQueue)
+    }
     val playbackState by viewModel.player.stateWithoutProgress.collectAsStateWithLifecycle()
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -401,6 +413,15 @@ fun PlayerHost(
         }
     }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val expandPlayer = remember(focusManager, keyboardController) {
+        {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            expanded = true
+        }
+    }
     val requestAddToPlaylist = remember(viewModel) {
         { track: PlayableTrack ->
             viewModel.prepareCustomPlaylists()
@@ -415,7 +436,10 @@ fun PlayerHost(
         }
     }
     LaunchedEffect(expanded) {
-        if (!expanded) {
+        if (expanded) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        } else {
             currentTab = FullPlayerTab.NOW_PLAYING
             playerLyrics = false
         }
@@ -450,7 +474,7 @@ fun PlayerHost(
                 } == true
             if (hasTrack && com.lastwave.app.widget.wave.WaveWidgetNavigation.consume(requestId)) {
                 currentTab = FullPlayerTab.NOW_PLAYING
-                expanded = true
+                expandPlayer()
             }
         }
     }
@@ -510,9 +534,18 @@ fun PlayerHost(
     val chromeCollapse = rememberChromeCollapseState(enabled = hasBottomNavigation && settings.collapsingNavBar)
     // While docking, the card slides down over the fading bar, not under it.
     val chromeDocking by remember { derivedStateOf { chromeCollapse.progress() > 0f } }
+    val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
         viewModel.toastMessage.collect { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.snackbarEvent.collect { msg ->
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = androidx.compose.material3.SnackbarDuration.Short,
+            )
         }
     }
     CompositionLocalProvider(
@@ -567,7 +600,7 @@ fun PlayerHost(
                 MiniPlayer(
                     state = state,
                     progressState = viewModel.miniProgressState,
-                    onExpand = { expanded = true },
+                    onExpand = expandPlayer,
                     onToggle = viewModel.player::togglePlayPause,
                     onPrevious = viewModel.player::previous,
                     onNext = viewModel.player::next,
@@ -608,7 +641,7 @@ fun PlayerHost(
                     track = currentTrack,
                     progressState = viewModel.miniProgressState,
                     isPlaying = state.isPlaying,
-                    onExpand = { expanded = true },
+                    onExpand = expandPlayer,
                     onClose = viewModel.player::stopAndClear,
                 )
             }
@@ -725,6 +758,13 @@ fun PlayerHost(
                     },
                 )
             }
+
+            MiniPlayerAwareSnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(100f),
+            )
         }
     }
 }

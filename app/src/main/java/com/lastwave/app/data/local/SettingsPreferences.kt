@@ -63,7 +63,6 @@ enum class LyricsProvider(val id: String, val title: String, val subtitle: Strin
     BETTER_LYRICS_PORTATO("better_lyrics_portato", "QQ Karaoke", "QQ Music karaoke word timings first"),
     KUGOU("kugou", "Kugou", "KRC word-synced lyrics first"),
     BINI_LYRICS("bini_lyrics", "Syllable-Sync", "Recording-matched syllable lyrics first"),
-    SIMP_MUSIC("simp_music", "Video-Match", "Matched on the playing video first"),
     MUSIXMATCH("musixmatch", "Catalog", "Largest catalogue line-sync first"),
     LRCLIB("lrclib", "LRCLIB", "Line-synced community lyrics first"),
     LYRICS_PLUS("lyrics_plus", "LyricsPlus", "Syllable-synced on community mirrors first"),
@@ -76,7 +75,7 @@ enum class LyricsProvider(val id: String, val title: String, val subtitle: Strin
 
     val isWordProvider: Boolean get() =
         this == LASTWAVE || this == LRC_RED || this == APPLE_MUSIC || this == BETTER_LYRICS || this == KUGOU ||
-            this == BINI_LYRICS || this == SIMP_MUSIC || this == MUSIXMATCH || this == SPOTIFY ||
+            this == BINI_LYRICS || this == MUSIXMATCH || this == SPOTIFY ||
             this == BETTER_LYRICS_PORTATO || this == LYRICS_PLUS || this == UNISON ||
             this == YOUTUBE_CAPTIONS || this == YOUTUBE_MUSIC || this == MEGALOBIZ || this == GENIUS
 
@@ -133,8 +132,27 @@ enum class HiResStart(val id: String, val title: String, val subtitle: String) {
     }
 }
 
+/** Output mode for 1-bit Direct Stream Digital (DSF / DFF) audio. */
+enum class DsdOutputMode(val id: String, val title: String, val subtitle: String) {
+    NATIVE(
+        id = "native",
+        title = "Native (DoP)",
+        subtitle = "Bit-perfect 1-bit DSD stream via universal DoP v1.0 standard to supported USB DACs (bypasses DSP & EQ)",
+    ),
+    PCM(
+        id = "pcm",
+        title = "Convert to PCM",
+        subtitle = "Decimates DSD to high-res 32-bit float PCM; compatible with all outputs and enables EQ & DSP",
+    );
+
+    companion object {
+        fun fromId(id: String?): DsdOutputMode = entries.firstOrNull { it.id == id } ?: NATIVE
+    }
+}
+
 /** Cellular-only streaming choice: adapt to the link and buffer, never above the Wi-Fi choice. */
 const val CELLULAR_QUALITY_AUTO = 0
+const val DOWNLOAD_QUALITY_SELECT_AT_DOWNLOAD_TIME = -2
 
 data class MiscSettings(
     /** When on, the app's accent color follows the dominant color of the
@@ -177,6 +195,8 @@ data class MiscSettings(
     val clarityAtmosBypass: Boolean = false,
     /** When true, completely bypasses DSP, EQ, tone effects, and software volume ducking for bit-exact audio. */
     val isBitPerfectEnabled: Boolean = false,
+    /** Output mode for 1-bit DSD files (DSF / DFF): Native (DoP) or Convert to PCM. */
+    val dsdOutputMode: DsdOutputMode = DsdOutputMode.NATIVE,
     /** System audio-effects mode (Settings -> Experimental). Off by default:
      *  when on, the app flattens its own DSP on mixer routes and publishes
      *  the audio session so external equalizer apps / OEM Dolby can process
@@ -286,6 +306,7 @@ data class MiscSettings(
      *  tears down the playback service. When false, playback keeps running in
      *  the background after the task is removed. */
     val stopPlaybackOnTaskRemoved: Boolean = false,
+    val pauseOnZeroVolume: Boolean = false,
     val suppressYouTubeLoginPrompt: Boolean = false,
     val hasDismissedJoinSupportPrompt: Boolean = false,
     /** Display name used in LastWave Jam sessions. */
@@ -304,7 +325,10 @@ data class MiscSettings(
     val useLegacyTrackMenu: Boolean = false,
     /** When true, enables blur effect behind and around song options menus. */
     val useMenuBlur: Boolean = true,
-)
+) {
+    val enabledHttpAddons: List<HttpAddonConfig>
+        get() = httpAddons.filter { it.enabled && it.url.isNotBlank() }
+}
 
 val MiscSettings.musicHapticsConfig: MusicHapticsConfig
     get() = MusicHapticsConfig(
@@ -459,6 +483,7 @@ class SettingsPreferences @Inject constructor(
         val CLARITY_PRESET = intPreferencesKey("lw_clarity_preset")
         val CLARITY_ATMOS_BYPASS = booleanPreferencesKey("lw_clarity_atmos_bypass")
         val BIT_PERFECT_ENABLED = booleanPreferencesKey("lw_bit_perfect_enabled")
+        val DSD_OUTPUT_MODE = stringPreferencesKey("lw_dsd_output_mode")
         val WORD_BY_WORD_LYRICS = booleanPreferencesKey("lw_word_by_word_lyrics")
         val LYRICS_PROVIDER = stringPreferencesKey("lw_lyrics_provider")
         val RECOMMENDATION_SOURCE = stringPreferencesKey("lw_recommendation_source")
@@ -513,6 +538,7 @@ class SettingsPreferences @Inject constructor(
         val LIKED_SONGS_LOCAL_ONLY = stringPreferencesKey("lw_liked_songs_local_only")
         val PODCASTS_ENABLED = booleanPreferencesKey("lw_podcasts_enabled")
         val STOP_PLAYBACK_ON_TASK_REMOVED = booleanPreferencesKey("lw_stop_playback_on_task_removed")
+        val PAUSE_ON_ZERO_VOLUME = booleanPreferencesKey("lw_pause_on_zero_volume")
         val SUPPRESS_YOUTUBE_LOGIN_PROMPT = booleanPreferencesKey("lw_suppress_youtube_login_prompt")
         val HAS_DISMISSED_JOIN_SUPPORT_PROMPT = booleanPreferencesKey("lw_has_dismissed_join_support_prompt")
         val JAM_DISPLAY_NAME = stringPreferencesKey("lw_jam_display_name")
@@ -582,6 +608,7 @@ class SettingsPreferences @Inject constructor(
                 clarityPreset = 0,
                 clarityAtmosBypass = false,
                 isBitPerfectEnabled = p.readSafely(Keys.BIT_PERFECT_ENABLED) ?: false,
+                dsdOutputMode = DsdOutputMode.fromId(p.readSafely(Keys.DSD_OUTPUT_MODE)),
                 wordByWordLyrics = p.readSafely(Keys.WORD_BY_WORD_LYRICS) ?: true,
                 lyricsProvider = LyricsProvider.fromId(p.readSafely(Keys.LYRICS_PROVIDER)),
                 recommendationSource = RecommendationSource.fromId(p.readSafely(Keys.RECOMMENDATION_SOURCE)),
@@ -627,6 +654,7 @@ class SettingsPreferences @Inject constructor(
                 canvasOverCellular = p.readSafely(Keys.CANVAS_OVER_CELLULAR) ?: true,
                 podcastsEnabled = p.readSafely(Keys.PODCASTS_ENABLED) ?: true,
                 stopPlaybackOnTaskRemoved = p.readSafely(Keys.STOP_PLAYBACK_ON_TASK_REMOVED) ?: false,
+                pauseOnZeroVolume = p.readSafely(Keys.PAUSE_ON_ZERO_VOLUME) ?: false,
                 suppressYouTubeLoginPrompt = p.readSafely(Keys.SUPPRESS_YOUTUBE_LOGIN_PROMPT) ?: false,
                 hasDismissedJoinSupportPrompt = p.readSafely(Keys.HAS_DISMISSED_JOIN_SUPPORT_PROMPT) ?: false,
                 jamDisplayName = p.readSafely(Keys.JAM_DISPLAY_NAME)?.trim().orEmpty(),
@@ -882,6 +910,10 @@ class SettingsPreferences @Inject constructor(
         dataStore.edit { it[Keys.STOP_PLAYBACK_ON_TASK_REMOVED] = enabled }
     }
 
+    suspend fun setPauseOnZeroVolume(enabled: Boolean) {
+        dataStore.edit { it[Keys.PAUSE_ON_ZERO_VOLUME] = enabled }
+    }
+
     suspend fun setSuppressYouTubeLoginPrompt(suppress: Boolean) {
         dataStore.edit { it[Keys.SUPPRESS_YOUTUBE_LOGIN_PROMPT] = suppress }
     }
@@ -965,6 +997,10 @@ class SettingsPreferences @Inject constructor(
 
     suspend fun setBitPerfectEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.BIT_PERFECT_ENABLED] = enabled }
+    }
+
+    suspend fun setDsdOutputMode(mode: DsdOutputMode) {
+        dataStore.edit { it[Keys.DSD_OUTPUT_MODE] = mode.id }
     }
 
     suspend fun setWordByWordLyrics(enabled: Boolean) {
@@ -1267,7 +1303,7 @@ class SettingsPreferences @Inject constructor(
     }
     private companion object {
         val STREAMING_QUALITIES = setOf(-1, 4, 5, 6, 27, 28)
-        val DOWNLOAD_QUALITIES = setOf(-1, 4, 5, 6, 7, 27, 28)
+        val DOWNLOAD_QUALITIES = setOf(DOWNLOAD_QUALITY_SELECT_AT_DOWNLOAD_TIME, -1, 4, 5, 6, 7, 27, 28)
     }
 
     private fun normalizeStreamingQuality(quality: Int): Int? = when (quality) {

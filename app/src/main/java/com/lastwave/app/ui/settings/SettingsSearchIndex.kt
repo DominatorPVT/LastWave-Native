@@ -2,6 +2,7 @@ package com.lastwave.app.ui.settings
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -266,6 +267,23 @@ object SettingsSearchIndex {
                         "continue playing", "task removed", "kill app", "close app"
                     ),
                     icon = Icons.Filled.StopCircle,
+                    iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
+                    iconTint = { MaterialTheme.colorScheme.onTertiaryContainer },
+                    parentTab = SettingsTab.AUDIO,
+                    section = "Audio & Playback",
+                    type = EntryType.TOGGLE,
+                )
+            )
+            add(
+                SettingsEntry(
+                    id = "audio.pause_on_zero_volume",
+                    title = "Pause Playback at Volume 0",
+                    subtitle = "Automatically pause playback when media volume reaches 0",
+                    keywords = listOf(
+                        "pause", "volume", "zero volume", "mute", "silent",
+                        "auto pause", "media volume", "volume 0"
+                    ),
+                    icon = Icons.AutoMirrored.Rounded.VolumeOff,
                     iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onTertiaryContainer },
                     parentTab = SettingsTab.AUDIO,
@@ -541,22 +559,6 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.MoreVert,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
-                    parentTab = SettingsTab.APPEARANCE,
-                    section = "Appearance",
-                    type = EntryType.TOGGLE,
-                )
-            )
-            add(
-                SettingsEntry(
-                    id = "appearance.menu_blur",
-                    title = "Use Blur in Menus",
-                    subtitle = "Blur the background behind song options and context menus",
-                    keywords = listOf(
-                        "menu blur", "blur", "translucent menu", "glass menu", "3 dots blur", "backdrop blur"
-                    ),
-                    icon = Icons.Filled.BlurOn,
-                    iconContainer = { MaterialTheme.colorScheme.primaryContainer },
-                    iconTint = { MaterialTheme.colorScheme.onPrimaryContainer },
                     parentTab = SettingsTab.APPEARANCE,
                     section = "Appearance",
                     type = EntryType.TOGGLE,
@@ -1179,8 +1181,27 @@ object SettingsSearchIndex {
             )
 
             // ==========================================
-            // TAB: LAST.FM
+            // TAB: SCROBBLERS
             // ==========================================
+            for ((id, name, description, terms) in listOf(
+                listOf("listenbrainz.connect", "ListenBrainz", "Connect with your user token; optional compatible server", "listenbrainz token maloja koito self-hosted"),
+                listOf("librefm.connect", "Libre.fm", "Connect with your username and password; optional GNU FM server", "librefm libre.fm gnu fm password self-hosted"),
+            )) {
+                add(
+                    SettingsEntry(
+                        id = id,
+                        title = "$name Account Connection",
+                        subtitle = description,
+                        keywords = terms.split(" ") + listOf("scrobblers", "scrobble", "scrobbling", "connect", "login"),
+                        icon = Icons.Filled.Album,
+                        iconContainer = { MaterialTheme.colorScheme.primaryContainer },
+                        iconTint = { MaterialTheme.colorScheme.onPrimaryContainer },
+                        parentTab = SettingsTab.SCROBBLERS,
+                        section = "Scrobblers",
+                        type = EntryType.ACTION,
+                    )
+                )
+            }
             add(
                 SettingsEntry(
                     id = "lastfm.connect",
@@ -1193,8 +1214,8 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.Album,
                     iconContainer = { MaterialTheme.colorScheme.primaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onPrimaryContainer },
-                    parentTab = SettingsTab.LAST_FM,
-                    section = "Integrations / Scrobbling",
+                    parentTab = SettingsTab.SCROBBLERS,
+                    section = "Scrobblers",
                     type = EntryType.ACTION,
                 )
             )
@@ -1210,8 +1231,8 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.Code,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
-                    parentTab = SettingsTab.LAST_FM,
-                    section = "Integrations / Scrobbling",
+                    parentTab = SettingsTab.SCROBBLERS,
+                    section = "Scrobblers",
                     type = EntryType.ACTION,
                 )
             )
@@ -1227,8 +1248,8 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.Public,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
-                    parentTab = SettingsTab.LAST_FM,
-                    section = "Integrations / Scrobbling",
+                    parentTab = SettingsTab.SCROBBLERS,
+                    section = "Scrobblers",
                     type = EntryType.TOGGLE,
                 )
             )

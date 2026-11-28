@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.3.0] - 2026-11-20
+
+### ✨ What's New
+
+* **Download Quality Selection:** Pick your preferred audio quality for downloads per save, matching the streaming quality system.
+* **Music Recognition:** Identify music playing around you straight from the app with audio capture.
+* **Discord Rich Presence:** Show what you're listening to on Discord.
+* **Mood Mosaic & Discover:** A colourful mood tile mosaic and refreshed Discover feed on Home.
+* **DSD & More Formats:** Native DSD (DSF/DFF) playback support extended with new file open filters.
+* **In-App Updates:** The app can install its GitHub release updates directly through PackageInstaller.
+
+---
+
 ## [5.2.1] - 2026-11-13
 
 ### ✨ What's New

@@ -171,9 +171,11 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenDiscover: () -> Unit,
-    onOpenListeningStats: () -> Unit,
+    onOpenGenres: () -> Unit = {},
+    onOpenListeningStats: () -> Unit = {},
     onOpenFriends: () -> Unit,
     onOpenDownloads: () -> Unit = {},
+    avatarUrl: String? = null,
     viewModel: HomeViewModel = hiltViewModel(),
     artistAlbumNavigator: com.lastwave.app.ui.navigation.ArtistAlbumNavigator = hiltViewModel<ArtistAlbumNavBridgeHome>().navigator,
 ) {
@@ -200,7 +202,8 @@ fun HomeScreen(
                     actions = {
                         HeaderActionIcon(Icons.Filled.Search, "Search", onOpenSearch)
                         IconButton(onClick = onOpenSettings) {
-                            ProfileAvatar(avatarUrl = uiState.stats?.avatarUrl, modifier = Modifier.size(38.dp))
+                            val displayAvatar = uiState.stats?.avatarUrl ?: avatarUrl
+                            ProfileAvatar(avatarUrl = displayAvatar, modifier = Modifier.size(38.dp))
                         }
                     },
                 )
@@ -274,7 +277,7 @@ fun HomeScreen(
                                 artistCount = stats.artistCount,
                                 albumCount = stats.albumCount,
                                 headlineLabel = headlineLabel,
-                                onOpenListeningStats = onOpenListeningStats,
+                                onOpenGenres = onOpenGenres,
                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 0.dp),
                             )
                         }
@@ -287,7 +290,7 @@ fun HomeScreen(
                             albumCount = stats.albumCount,
                             headlineLabel = headlineLabel,
                             onExpand = statsCollapse::expand,
-                            onOpenListeningStats = onOpenListeningStats,
+                            onOpenGenres = onOpenGenres,
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     },

@@ -229,6 +229,7 @@ internal data class LocalFolderGroup(
     val subtitle: String,
     val safUri: Uri?,
     val tracks: List<GeneratedTrack>,
+    val artworkUrl: String? = null,
 )
 
 @HiltViewModel
@@ -500,6 +501,8 @@ fun LocalMusicHub(
             sortAscending
         if (preservePlaylistOrder) {
             filtered
+        } else if (detailRoute is LocalDetailRoute.OfflinePlaylistDetail && sortMode == LocalSortMode.ADDED && !sortAscending) {
+            filtered.reversed()
         } else if (detailRoute is LocalDetailRoute.Album && sortMode == LocalSortMode.TITLE && sortAscending) {
             // Albums default nicely by disc + track number when user hasn't picked a custom sort override
             filtered.sortedWith(
@@ -946,7 +949,7 @@ fun LocalMusicHub(
                     } else {
                         itemsIndexed(
                             items = displayedSongs,
-                            key = { index, t -> "detail_${t.url}_$index" },
+                            key = { index, t -> if (t.url.isNotBlank()) "detail_${t.url}" else "detail_${t.name}_${t.artist}_$index" },
                             contentType = { _, _ -> "local_track_row" },
                         ) { index, track ->
                             val trackPlaying = playbackState.isPlaying &&
@@ -1007,7 +1010,7 @@ fun LocalMusicHub(
                     } else {
                         itemsIndexed(
                             items = displayedSongs,
-                            key = { index, t -> "song_${t.url}_$index" },
+                            key = { index, t -> if (t.url.isNotBlank()) "song_${t.url}" else "song_${t.name}_${t.artist}_$index" },
                             contentType = { _, _ -> "local_track_row" },
                         ) { index, track ->
                             val trackPlaying = playbackState.isPlaying &&
@@ -1229,19 +1232,13 @@ fun LocalMusicHub(
                                     detailRoute = LocalDetailRoute.Folder(folder.key, folder.title)
                                 },
                                 leading = {
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        modifier = Modifier.size(48.dp),
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Filled.FolderOpen,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            )
-                                        }
-                                    }
+                                    ArtworkImage(
+                                        name = folder.title,
+                                        artist = folder.subtitle,
+                                        embeddedUrl = folder.artworkUrl,
+                                        fallbackIcon = Icons.Filled.FolderOpen,
+                                        modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
+                                    )
                                 },
                                 trailing = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1792,16 +1789,13 @@ private fun LocalHeroHeader(
                             Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(40.dp))
                         }
                     }
-                    is LocalDetailRoute.Folder -> Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.size(92.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(40.dp))
-                        }
-                    }
+                    is LocalDetailRoute.Folder -> ArtworkImage(
+                        name = representativeTrack?.name ?: title,
+                        artist = representativeTrack?.artist ?: "",
+                        embeddedUrl = representativeTrack?.artworkUrl,
+                        fallbackIcon = Icons.Filled.FolderOpen,
+                        modifier = artModifier,
+                    )
                     else -> ArtworkImage(
                         name = representativeTrack?.name ?: title,
                         artist = representativeTrack?.artist ?: "",
@@ -2654,7 +2648,7 @@ private fun sortLocalTracks(
     ascending: Boolean,
 ): List<GeneratedTrack> {
     val comparator: Comparator<LocalSortKey> = when (mode) {
-        LocalSortMode.TITLE -> compareBy<LocalSortKey> { it.name }
+        LocalSortMode.TITLE -> compareBy<LocalSortKey>({ it.name }, { it.artist })
         LocalSortMode.ARTIST -> compareBy<LocalSortKey>({ it.artist }, { it.name })
         LocalSortMode.ALBUM -> compareBy<LocalSortKey>(
             { it.album },
@@ -2667,8 +2661,8 @@ private fun sortLocalTracks(
             { it.track.trackNumber ?: Int.MAX_VALUE },
             { it.name },
         )
-        LocalSortMode.DURATION -> compareBy<LocalSortKey> { it.track.durationMs ?: 0L }
-        LocalSortMode.ADDED -> return if (ascending) tracks else tracks.reversed()
+        LocalSortMode.DURATION -> compareBy<LocalSortKey>({ it.track.durationMs ?: 0L }, { it.name })
+        LocalSortMode.ADDED -> compareBy<LocalSortKey> { it.addedOrder }
         LocalSortMode.FORMAT -> compareBy<LocalSortKey>({ it.format }, { it.name })
     }
     val base = tracks.map(::LocalSortKey).sortedWith(comparator).map { it.track }
@@ -2682,6 +2676,11 @@ private class LocalSortKey(val track: GeneratedTrack) {
     val artist by lazy(LazyThreadSafetyMode.NONE) { track.artist.lowercase() }
     val album by lazy(LazyThreadSafetyMode.NONE) { track.album?.lowercase().orEmpty() }
     val format by lazy(LazyThreadSafetyMode.NONE) { formatBadgeForTrack(track).orEmpty() }
+    val addedOrder by lazy(LazyThreadSafetyMode.NONE) {
+        track.url.substringAfterLast('/').toLongOrNull()
+            ?: runCatching { java.io.File(track.url).takeIf { it.exists() }?.lastModified() }.getOrNull()
+            ?: 0L
+    }
 }
 
 private fun albumKeyOf(track: GeneratedTrack): String {
@@ -2770,6 +2769,7 @@ private fun buildFolderGroups(
         grouped.getOrPut("saf:$saf") { mutableListOf() }
     }
     return grouped.map { (key, list) ->
+        val folderArt = list.firstNotNullOfOrNull { it.artworkUrl?.takeIf(String::isNotBlank) }
         when {
             key.startsWith("saf:") -> {
                 val uriStr = key.removePrefix("saf:")
@@ -2782,6 +2782,7 @@ private fun buildFolderGroups(
                     subtitle = label,
                     safUri = uri,
                     tracks = list,
+                    artworkUrl = folderArt,
                 )
             }
             key.startsWith("dir:") -> {
@@ -2793,6 +2794,7 @@ private fun buildFolderGroups(
                     subtitle = dirPath,
                     safUri = null,
                     tracks = list,
+                    artworkUrl = folderArt,
                 )
             }
             else -> LocalFolderGroup(
@@ -2801,6 +2803,7 @@ private fun buildFolderGroups(
                 subtitle = "MediaStore",
                 safUri = null,
                 tracks = list,
+                artworkUrl = folderArt,
             )
         }
     }.sortedBy { it.title.lowercase() }

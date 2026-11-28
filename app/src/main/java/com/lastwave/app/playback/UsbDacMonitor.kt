@@ -1,3 +1,23 @@
+/*
+ * Copyright (C) 2026 LastWave Authors (https://github.com/Clash-Projects/LastWave-Native)
+ *
+ * SPDX-License-Identifier: GPL-3.0-only
+ *
+ * This file is part of LastWave.
+ *
+ * LastWave is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 3 of the License.
+ *
+ * LastWave is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with LastWave. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.lastwave.app.playback
 
 import android.app.PendingIntent
@@ -175,10 +195,6 @@ class UsbDacMonitor @Inject constructor(
         runCatching { manager.requestPermission(device, pending) }
     }
 
-    private fun AudioDeviceInfo.isUsbOutput(): Boolean = type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-        type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-        type == AudioDeviceInfo.TYPE_USB_ACCESSORY
-
     private fun UsbDevice.isAudioPeripheral(): Boolean {
         if (deviceClass == UsbConstants.USB_CLASS_AUDIO) return true
         for (index in 0 until interfaceCount) {
@@ -194,3 +210,8 @@ class UsbDacMonitor @Inject constructor(
         const val USB_PERMISSION_REQUEST = 4107
     }
 }
+
+internal fun AudioDeviceInfo.isUsbOutput(): Boolean = type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+    type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+    type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+

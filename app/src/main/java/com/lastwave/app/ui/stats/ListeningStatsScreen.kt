@@ -131,7 +131,7 @@ fun ListeningStatsScreen(
                 top = 8.dp,
                 bottom = FloatingNavDefaults.contentBottomPadding() + 24.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // ── TIME RANGE CHIPS ──
             item {
@@ -172,6 +172,20 @@ fun ListeningStatsScreen(
                 }
             }
 
+            // ── RHYTHM & CONSISTENCY (SLEEP TRACKER INSPIRED) ──
+            uiState.consistency?.let { consistency ->
+                item {
+                    ConsistencyScoreCard(data = consistency)
+                }
+            }
+
+            // ── LISTENING STAGES (DEEP FOCUS / FLOW / DISCOVERY) ──
+            uiState.stages?.let { stages ->
+                item {
+                    ListeningStagesCard(stages = stages)
+                }
+            }
+
             // ── PERSONAL RECORDS ──
             uiState.records?.let { records ->
                 item {
@@ -208,7 +222,7 @@ fun ListeningStatsScreen(
 
             // ── SECTION 1: LISTENING TIMELINE ──
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Listening timeline",
                         style = MaterialTheme.typography.titleLarge,
@@ -353,7 +367,7 @@ fun ListeningStatsScreen(
 
             // ── SECTION 2: TOP CATEGORIES ──
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Top categories",
                         style = MaterialTheme.typography.titleLarge,
@@ -416,7 +430,7 @@ fun ListeningStatsScreen(
 
             // ── SECTION 3: LISTENING HABITS ──
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Listening habits",
                         style = MaterialTheme.typography.titleLarge,
@@ -462,7 +476,7 @@ fun ListeningStatsScreen(
 
             // ── SECTION 4: TRACK CONCENTRATION ──
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Track concentration",
                         style = MaterialTheme.typography.titleLarge,
@@ -585,7 +599,7 @@ fun ListeningStatsScreen(
 
             // ── SECTION 5: TRACKS IN THIS RANGE ──
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Tracks in this range",
                         style = MaterialTheme.typography.titleLarge,
