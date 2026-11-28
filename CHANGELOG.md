@@ -88,6 +88,7 @@
 - **TV Now-Playing Hero Redesign:** The home hero now sits on a dark frosted card with consistent round transport buttons, a clearly visible seek bar and softer artwork wash behind it — no more washed-out text floating on a muddy backdrop.
 - **Canvas-Driven TV Ambience:** When a Canvas motion cover plays, the whole TV screen now follows its colours — the blurred backdrop, the rail side (logo, Home, Search, Library, Settings) and the hero glow all shift to the video's palette. The backdrop also flows edge to edge with its blur, removing the sharp black band around the rail, and TV artwork corners are rounder and smoother.
 - **Desktop Features on TV:** TV Settings gains two audiophile features from LastWave Desktop — a sleep timer (Off / 15 / 30 / 60 minutes with a live countdown) and a loudness normalization toggle (ReplayGain) that keeps volume even across tracks.
+- **TV Home Polish:** The navigation rail is now a dark glass sidebar that flows over the screen ambience, section headers carry a brand accent bar, and the frosted cards got crisper hairlines.
 
 ## [5.0.0] - 2026-10-30
 
