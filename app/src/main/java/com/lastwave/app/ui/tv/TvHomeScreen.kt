@@ -419,6 +419,8 @@ private fun TvNavRail(
         modifier = Modifier
             .fillMaxHeight()
             .width(112.dp)
+            .clip(RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp))
+            .background(Color(0x991E1E22)) // Dark glass sidebar
             .padding(vertical = 40.dp)
             .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -743,11 +745,23 @@ private fun TvGreeting() {
 
 @Composable
 internal fun TvSectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Brand accent bar beside every section heading
+        Box(
+            modifier = Modifier
+                .size(width = 4.dp, height = 22.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }
 
 /** Now-playing hero: the screen's single focal point — art, words, transport. */
@@ -801,7 +815,7 @@ private fun TvNowPlayingHero(
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
             .background(Color(0xD91E1E22))
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(28.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(28.dp))
             .padding(horizontal = 28.dp, vertical = 24.dp),
     ) {
         // Ambient wash behind the whole hero panel, tinted by the artwork.
@@ -1742,7 +1756,7 @@ private fun TvMiniNowPlayingBar(viewModel: TvHomeViewModel) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xD91E1E22))
-                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
                 .padding(horizontal = 18.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {

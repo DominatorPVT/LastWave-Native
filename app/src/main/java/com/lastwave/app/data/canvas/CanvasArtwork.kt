@@ -28,12 +28,14 @@ enum class CanvasSource {
     SPOTIFY,
     APPLE,
     TIDAL,
+    COMMUNITY,
 }
 
 fun CanvasSource.displayName(): String = when (this) {
     CanvasSource.APPLE -> "Apple Music Motion"
     CanvasSource.TIDAL -> "TIDAL Video Cover"
     CanvasSource.SPOTIFY -> "Spotify Canvas"
+    CanvasSource.COMMUNITY -> "Community Canvas"
 }
 
 data class CanvasArtwork(
