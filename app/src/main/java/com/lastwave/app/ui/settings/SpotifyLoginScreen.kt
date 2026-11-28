@@ -304,7 +304,7 @@ fun SpotifyLoginScreen(
                                     javaScriptEnabled = true
                                     domStorageEnabled = true
                                     databaseEnabled = true
-                                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                                     cacheMode = WebSettings.LOAD_DEFAULT
                                     // Keep the default user agent: the accounts page
                                     // rejects a UA that claims to be Chrome while

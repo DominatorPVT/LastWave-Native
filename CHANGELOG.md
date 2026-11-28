@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.3.0] - 2026-11-20
+
+### ✨ What's New
+
+* **Download Quality Selection:** Pick your preferred audio quality for downloads per save, matching the streaming quality system.
+* **Music Recognition:** Identify music playing around you straight from the app with audio capture.
+* **Discord Rich Presence:** Show what you're listening to on Discord.
+* **Mood Mosaic & Discover:** A colourful mood tile mosaic and refreshed Discover feed on Home.
+* **DSD & More Formats:** Native DSD (DSF/DFF) playback support extended with new file open filters.
+* **In-App Updates:** The app can install its GitHub release updates directly through PackageInstaller.
+
+---
+
 ## [5.2.1] - 2026-11-13
 
 ### ✨ What's New
@@ -61,7 +74,25 @@
 ## [Unreleased]
 
 ### Added & Improved
+- **Android TV (Leanback) Support:** LastWave now runs natively on Android TV, Google TV and Fire TV from the same APK. A dedicated D-pad home (Now Playing hero, top tracks and recently played from your listening history, remote-keyboard search) launches from the TV home screen, driven by the same process-wide MusicPlayer — queue, radio and the media session behave exactly as on phone. The phone launcher is untouched and the TV activity is declared separately, so phones list only the touch UI.
 - **Recommendation Provider Switch:** Settings → Spotify now offers a recommendation provider choice. Pick Spotify to seed Home shelves, Quick Picks, radio, Discover and mixes from your Spotify taste; the switch applies everywhere and invalidates the cached home feed. Spotify only supplies the seeds — tracks are matched back to playable YouTube Music, and any failure or empty answer silently keeps the YouTube Music graph, so playback never breaks.
+
+### Fixed
+- **Seekable FLAC Downloads:** Fixed fragmented-MP4 header parsing (FullBox version/flags offsets) so STREAMINFO total samples, sidx timescale and duration patching land on the right fields and FLAC downloads seek correctly.
+- **Android TV on API 23:** DataStore lowered to 1.1.7 so the TV build keeps its Android 6.0 minimum instead of being forced to API 24 by DataStore 1.3.
+- **TV Lyrics Scrolling:** Holding the D-pad on the lyrics screen now steers the list instantly and stops the moment the key is released, instead of letting queued scroll animations keep gliding.
+- **Artist Profile Backdrop:** The artist page now paints a solid background and slides in smoothly, so the browse screen no longer shows through behind it.
+- **Virtual Pointer on Sign-In Pages:** The virtual mouse pointer is now always on in sign-in pages — parked at the centre the moment a page opens, no first D-pad press needed. The pointer options were removed from the setup wizard and TV Settings.
+- **Setup Welcome Logo:** The setup screen now shows the original LastWave mark — the dark bars on the logo's lime disc — instead of the barely visible dark-on-dark bars.
+- **Security Hardening:** Login sessions (the Spotify sp_dc store and the YouTube sign-in cookies) are now excluded from device backups and phone-to-phone transfers, and the sign-in pages refuse cleartext (HTTP) subresources so a hostile network cannot inject anything into a page that captures credentials.
+- **TV Now-Playing Hero Redesign:** The home hero now sits on a dark frosted card with consistent round transport buttons, a clearly visible seek bar and softer artwork wash behind it — no more washed-out text floating on a muddy backdrop.
+- **Canvas-Driven TV Ambience:** When a Canvas motion cover plays, the whole TV screen now follows its colours — the blurred backdrop, the rail side (logo, Home, Search, Library, Settings) and the hero glow all shift to the video's palette. The backdrop also flows edge to edge with its blur, removing the sharp black band around the rail, and TV artwork corners are rounder and smoother.
+- **Desktop Features on TV:** TV Settings gains two audiophile features from LastWave Desktop — a sleep timer (Off / 15 / 30 / 60 minutes with a live countdown) and a loudness normalization toggle (ReplayGain) that keeps volume even across tracks.
+- **TV Home Polish:** The navigation rail is now a dark glass sidebar that flows over the screen ambience, section headers carry a brand accent bar, and the frosted cards got crisper hairlines.
+- **TV Transport Console:** The hero transport is now a console — shuffle, prev/next and repeat sit together inside one frosted pill, while play/pause stands alone with a colour halo lit by the artwork's own palette. No more five identical discs melting into the card.
+- **Canvas Ambience:** When a track has a motion canvas, the same clip that plays sharp in the hero tile now also fills the whole screen blurred behind the app — home, lyrics, everything glows with the video while the tile stays crisp.
+- **TV Transport Refinement:** Spotify-style transport — focus is now a solid white disc with a dark glyph so the remote's position is always obvious, active shuffle/repeat carry a brand dot, the play control is a clean white button without glow, and the hero card shrank to a tighter, more Spotify-like footprint (smaller artwork, discs and paddings).
+- **Lyrics Stage:** The lyrics tab was redesigned as a stage — artwork-thumb header with source pill, a readability scrim over the ambience, and the current line large, accent-lit and marked by a brand bar that follows the canvas colour. Plain lyrics now scroll.
 
 ## [5.0.0] - 2026-10-30
 

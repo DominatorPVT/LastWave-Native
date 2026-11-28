@@ -242,9 +242,26 @@ android {
     // island and is almost never already installed outside China.
     val vivoOrigin = (project.findProperty("vivoOrigin") as? String)?.toBoolean() == true
 
+    // Android TV build: `-PtvApp=true` ships the same app as a separate
+    // package (com.lastwave.app.tv) so the TV APK installs alongside the
+    // phone app instead of replacing it. Still one universal APK.
+    val tvApp = (project.findProperty("tvApp") as? String)?.toBoolean() == true
+
+    // App ships English-only: strip every other locale from the APK
+    // (AGP 9 replacement for the deprecated resourceConfigurations).
+    androidResources {
+        localeFilters += setOf("en")
+    }
+
+
     defaultConfig {
-        applicationId = if (vivoOrigin) "com.tencent.qqmusic" else "com.lastwave.app"
+        applicationId = when {
+            vivoOrigin -> "com.tencent.qqmusic"
+            tvApp -> "com.lastwave.app.tv"
+            else -> "com.lastwave.app"
+        }
         buildConfigField("boolean", "VIVO_ORIGIN", vivoOrigin.toString())
+        buildConfigField("boolean", "TV_APP", tvApp.toString())
         minSdk = (project.findProperty("minSdk") as? String)?.toIntOrNull() ?: 29
         targetSdk = 35
         versionCode = 34
@@ -316,6 +333,8 @@ android {
                 storePassword = storePasswordProp
                 keyAlias = keyAliasProp
                 keyPassword = keyPasswordProp
+                // Store type override (e.g. PKCS12 from the DollBloom unseal flow).
+                resolveSecret("RELEASE_STORE_TYPE").takeIf { it.isNotBlank() }?.let { storeType = it }
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
@@ -332,7 +351,15 @@ android {
                 // so debug builds and unit tests keep working with no signing
                 // secrets present on a dev machine.
                 if (requestsRelease) {
+                    println(
+                        "LastWave signing probe: SIGNING_KEY blank=" + (base64Key.isBlank()).toString() +
+                            ", RELEASE_STORE_FILE blank=" + (storeFilePath.isBlank()).toString() +
+                            ", STORE_PASSWORD blank=" + (storePasswordProp.isBlank()).toString() +
+                            ", keystoreFile=" + (releaseKeystoreFile?.absolutePath ?: "null") +
+                            ", exists=" + (releaseKeystoreFile?.exists()?.toString() ?: "n/a")
+                    )
                     throw GradleException(
+
                         "No release signing key found. Provide SIGNING_KEY (base64 " +
                             "keystore) or RELEASE_STORE_FILE + RELEASE_STORE_PASSWORD + " +
                             "RELEASE_KEY_ALIAS. Refusing to sign a release variant with " +
@@ -502,13 +529,13 @@ dependencies {
     implementation("androidx.media3:media3-datasource-okhttp:1.9.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.9.0")
     // Segmented provider-module path: DASH chunk source + CDM decryption.
-    // Pinned to the same 1.9.0 line as exoplayer/hls to match 16 KB FFmpeg.
+    // Pinned to the same 1.2.1 line as exoplayer/hls to avoid binary mismatch.
     implementation("androidx.media3:media3-exoplayer-dash:1.9.0")
     // MediaBrowserServiceCompat/MediaSessionCompat bridge used by Android
     // Auto to browse the LastWave library and control the same player.
     implementation("androidx.media:media:1.7.0")
 
-    // GPLv3 Media3-matched 16 KB-aligned FFmpeg software decoder (distribution must comply).
+    // GPLv3 Media3-matched FFmpeg software decoder (distribution must comply).
     // The renderer factory prefers FFmpeg for every codec it supports so all
     // devices decode through one deterministic, OEM-bug-free path; platform
     // decoders remain as automatic fallbacks.
@@ -572,11 +599,9 @@ configurations.all {
 
 tasks.withType<Test> {
     maxHeapSize = "2048m"
-    if (System.getenv("CI") != null) {
-        javaLauncher.set(project.extensions.getByType<org.gradle.jvm.toolchain.JavaToolchainService>().launcherFor {
-            languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(17))
-        })
-    }
+    javaLauncher.set(project.extensions.getByType<org.gradle.jvm.toolchain.JavaToolchainService>().launcherFor {
+        languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(17))
+    })
 }
 
 val nativeVaultFp = MessageDigest.getInstance("SHA-256")
