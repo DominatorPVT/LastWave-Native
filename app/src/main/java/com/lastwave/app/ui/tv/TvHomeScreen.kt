@@ -838,7 +838,7 @@ private fun TvNowPlayingHero(
             .clip(RoundedCornerShape(28.dp))
             .background(Color(0xD91E1E22))
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(28.dp))
-            .padding(horizontal = 28.dp, vertical = 24.dp),
+            .padding(horizontal = 24.dp, vertical = 18.dp),
     ) {
         // Ambient wash behind the whole hero panel, tinted by the artwork.
         Box(
@@ -856,21 +856,21 @@ private fun TvNowPlayingHero(
         )
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(32.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             // Motion artwork (Spotify Canvas & friends) when a clip exists for the
             // track; static cover art otherwise.
-            Box(modifier = Modifier.size(188.dp)) {
+            Box(modifier = Modifier.size(140.dp)) {
                 // Radial glow bleeding out from behind the canvas,
                 // tinted by the artwork color.
                 Box(
                     modifier = Modifier
-                        .requiredSize(320.dp)
+                        .requiredSize(240.dp)
                         .background(
                             Brush.radialGradient(
                                 listOf(
@@ -889,7 +889,7 @@ private fun TvNowPlayingHero(
                     animationSpec = tween(durationMillis = 420),
                     label = "tvHeroArt",
                 ) { url ->
-                    TvArtwork(artworkUrl = url, size = 188.dp)
+                    TvArtwork(artworkUrl = url, size = 140.dp)
                 }
                 if (canvas != null) {
                     // CanvasVideoPlayer holds its surface fully transparent
@@ -965,7 +965,7 @@ private fun TvNowPlayingHero(
                     )
                     Text(
                         text = track.title,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -996,35 +996,41 @@ private fun TvNowPlayingHero(
             if (track != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(26.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(percent = 50))
-                            .background(Color.White.copy(alpha = 0.07f))
-                            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(percent = 50))
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .background(Color.Black.copy(alpha = 0.32f))
+                            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(percent = 50))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                     ) {
                         TvTransportButton(
                             icon = if (shuffle) Icons.Rounded.ShuffleOn else Icons.Rounded.Shuffle,
                             contentDescription = stringResource(R.string.tv_shuffle),
                             active = shuffle,
                             quiet = true,
+                            buttonSize = 46.dp,
+                            iconSize = 22.dp,
                             onClick = viewModel::toggleShuffle,
                         )
                         TvTransportButton(
                             icon = Icons.Rounded.SkipPrevious,
                             contentDescription = stringResource(R.string.tv_previous),
                             quiet = true,
+                            buttonSize = 46.dp,
+                            iconSize = 22.dp,
                             onClick = viewModel::previous,
                         )
                         TvTransportButton(
                             icon = Icons.Rounded.SkipNext,
                             contentDescription = stringResource(R.string.tv_next),
                             quiet = true,
+                            buttonSize = 46.dp,
+                            iconSize = 22.dp,
                             onClick = viewModel::next,
                         )
                         TvTransportButton(
@@ -1032,40 +1038,27 @@ private fun TvNowPlayingHero(
                             contentDescription = stringResource(R.string.tv_repeat),
                             active = repeatMode != Player.REPEAT_MODE_OFF,
                             quiet = true,
+                            buttonSize = 46.dp,
+                            iconSize = 22.dp,
                             onClick = viewModel::cycleRepeatMode,
                         )
                     }
-                    Box(contentAlignment = Alignment.Center) {
-                        // Colour halo behind play/pause — echoes the ambient
-                        // artwork/canvas tint so the primary control feels lit.
-                        Box(
-                            modifier = Modifier
-                                .requiredSize(112.dp)
-                                .background(
-                                    Brush.radialGradient(
-                                        listOf(
-                                            ambient.copy(alpha = 0.26f),
-                                            ambient.copy(alpha = 0.10f),
-                                            Color.Transparent,
-                                        ),
-                                    ),
-                                ),
-                        )
-                        TvTransportButton(
-                            icon = if (chrome.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (chrome.isPlaying) {
-                                stringResource(R.string.tv_pause)
-                            } else {
-                                stringResource(R.string.tv_play)
-                            },
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            iconTint = MaterialTheme.colorScheme.onPrimary,
-                            iconSize = 40.dp,
-                            buttonSize = 74.dp,
-                            modifier = Modifier.focusRequester(playFocus),
-                            onClick = viewModel::togglePlayPause,
-                        )
-                    }
+                    // Spotify-style primary control: a clean white disc with
+                    // a dark glyph — no glow, no tint, unmistakable.
+                    TvTransportButton(
+                        icon = if (chrome.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (chrome.isPlaying) {
+                            stringResource(R.string.tv_pause)
+                        } else {
+                            stringResource(R.string.tv_play)
+                        },
+                        containerColor = Color.White,
+                        iconTint = Color(0xFF111114),
+                        iconSize = 36.dp,
+                        buttonSize = 64.dp,
+                        modifier = Modifier.focusRequester(playFocus),
+                        onClick = viewModel::togglePlayPause,
+                    )
                 }
             }
         }
@@ -1260,7 +1253,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(68.dp)
+                .size(56.dp)
                 .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 8.dp)
                 .clip(CircleShape)
                 .background(heroDiscColor)
@@ -1272,7 +1265,7 @@ private fun TvHeroLyricsButton(onClick: () -> Unit) {
                 imageVector = Icons.Rounded.MusicNote,
                 contentDescription = stringResource(R.string.tv_tab_lyrics),
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(26.dp),
             )
         }
         Text(
@@ -1308,7 +1301,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .size(68.dp)
+                .size(56.dp)
                 .tvLift(focused = isFocused, shape = CircleShape, focusedScale = 1.12f, elevation = 8.dp)
                 .clip(CircleShape)
                 .background(heroDiscColor)
@@ -1320,7 +1313,7 @@ private fun TvHeroQueueButton(onClick: () -> Unit) {
                 imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                 contentDescription = stringResource(R.string.tv_tab_queue),
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(26.dp),
             )
         }
         Text(
@@ -1348,13 +1341,12 @@ private fun TvTransportButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
+    // Spotify-TV grammar: focus is a solid white disc with a dark glyph —
+    // you can ALWAYS tell which control the remote is on. An active toggle
+    // (shuffle/repeat on) keeps a brand dot under its glyph when idle.
     val transportBackground by animateColorAsState(
         targetValue = when {
-            isFocused && containerColor == Color.Transparent -> if (quiet) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
-            }
+            isFocused && containerColor == Color.Transparent -> if (quiet) Color.White else MaterialTheme.colorScheme.surfaceContainerHighest
             containerColor == Color.Transparent -> if (quiet) Color.Transparent else Color.White.copy(alpha = 0.10f)
             else -> containerColor
         },
@@ -1363,7 +1355,7 @@ private fun TvTransportButton(
     )
     val transportTint by animateColorAsState(
         targetValue = when {
-            isFocused && containerColor == Color.Transparent -> MaterialTheme.colorScheme.onSurface
+            isFocused && containerColor == Color.Transparent -> Color(0xFF111114)
             active && containerColor == Color.Transparent -> MaterialTheme.colorScheme.primary
             else -> iconTint
         },
@@ -1385,12 +1377,26 @@ private fun TvTransportButton(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = transportTint,
-            modifier = Modifier.size(iconSize),
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = transportTint,
+                modifier = Modifier.size(iconSize),
+            )
+            // Active-toggle dot (shuffle on / repeat on) — reads at a glance.
+            if (active && containerColor == Color.Transparent) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+        }
     }
 }
 
