@@ -2,6 +2,8 @@ package com.lastwave.app.ui.tv
 
 import android.os.SystemClock
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -47,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -68,19 +71,27 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * TV lyrics tab, BitChord-style: the current line is large and brand-colored
- * while the rest stays quiet, and the list auto-scrolls with playback. Lines
- * are deliberately not focusable — the remote keeps the rail, BACK returns
- * Home, and the words simply follow the song.
+ * TV lyrics tab: a stage, not a document. The pane rides on the root's
+ * canvas-blur ambience (motion clips glow blurred behind everything), a soft
+ * scrim keeps the words readable over it, and the current line is large,
+ * accent-lit and marked by a brand bar while the rest stays quiet. The list
+ * auto-scrolls with playback; the remote can still take over and scroll
+ * manually, and BACK returns Home.
  */
 @Composable
 fun TvLyricsTab(
     viewModel: TvHomeViewModel,
     railHomeFocus: androidx.compose.ui.focus.FocusRequester,
+    accentHex: String? = null,
 ) {
     val lyrics = viewModel.lyricsState
     val chrome by viewModel.musicPlayer.chromeState.collectAsStateWithLifecycle()
     val track = chrome.current
+    // Canvas accent first (same Palette pass the hero uses) — the active line
+    // and its bar follow the colour of the motion art when there is one.
+    val accent = accentHex
+        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+        ?: MaterialTheme.colorScheme.primary
 
     // Tab-entry focus: the synced list focuses itself once lyrics exist; in
     // every other state the rail takes focus so the remote is never dead.
@@ -91,10 +102,23 @@ fun TvLyricsTab(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Readability scrim over the blurred canvas/artwork ambience.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.12f),
+                        0.55f to Color.Black.copy(alpha = 0.30f),
+                        1f to Color.Black.copy(alpha = 0.52f),
+                    ),
+                ),
+        )
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 48.dp, vertical = 32.dp),
+            .padding(horizontal = 56.dp, vertical = 32.dp),
     ) {
         when (lyrics) {
             LyricsUiState.Idle, is LyricsUiState.Error, LyricsUiState.Empty ->
@@ -125,27 +149,49 @@ fun TvLyricsTab(
             is LyricsUiState.Success -> {
                 val success = lyrics as LyricsUiState.Success
                 if (track != null) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    val sourceLabel = success.source
-                    val subtitle = if (sourceLabel.isNullOrBlank()) {
-                        track.artist
-                    } else {
-                        stringResource(R.string.tv_lyrics_source, sourceLabel)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        TvArtwork(artworkUrl = track.artworkUrl, size = 52.dp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val sourceLabel = success.source
+                            val subtitle = if (sourceLabel.isNullOrBlank()) {
+                                track.artist
+                            } else {
+                                stringResource(R.string.tv_lyrics_source, sourceLabel)
+                            }
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        // Source pill echoes the hero's badge grammar.
+                        if (!success.source.isNullOrBlank()) {
+                            Text(
+                                text = success.source,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(percent = 50))
+                                    .background(Color.White.copy(alpha = 0.08f))
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                            )
+                        }
                     }
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
                 }
                 if (success.isSynced) {
                     Text(
@@ -154,18 +200,23 @@ fun TvLyricsTab(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    TvSyncedLyrics(lines = success.lines, progressState = viewModel.musicPlayer.progressState)
+                    TvSyncedLyrics(lines = success.lines, progressState = viewModel.musicPlayer.progressState, accent = accent)
                 } else {
                     val plain = success.plainLyrics?.takeIf { it.isNotBlank() }
                         ?: success.lines.joinToString(separator = "\n") { it.text }
+                    // Plain lyrics can run long: make them scrollable instead
+                    // of clipping at the pane edge.
                     Text(
                         text = plain,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
                     )
                 }
             }
+        }
         }
     }
 }
@@ -174,6 +225,7 @@ fun TvLyricsTab(
 private fun TvSyncedLyrics(
     lines: List<LyricLine>,
     progressState: kotlinx.coroutines.flow.StateFlow<com.lastwave.app.playback.PlaybackProgressState>,
+    accent: Color,
 ) {
     val listState = rememberLazyListState()
     val progress by progressState.collectAsStateWithLifecycle()
@@ -238,7 +290,7 @@ private fun TvSyncedLyrics(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         itemsIndexed(lines, key = { index, line -> "$index-${line.timeMs}" }) { index, line ->
-            TvLyricLineRow(line = line, active = index == activeLine)
+            TvLyricLineRow(line = line, active = index == activeLine, accent = accent)
         }
     }
 
@@ -253,29 +305,61 @@ private const val USER_SCROLL_HOLD_MS = 4_000L
 private const val LYRICS_SCROLL_STEP_DP = 96
 
 @Composable
-private fun TvLyricLineRow(line: LyricLine, active: Boolean) {
-    // Colour and emphasis glide between lines instead of snapping.
+private fun TvLyricLineRow(line: LyricLine, active: Boolean, accent: Color) {
+    // Colour and emphasis glide between lines instead of snapping. The active
+    // line leans on the canvas accent and a brand bar at its leading edge —
+    // the same accent grammar the section titles use, so the whole app reads
+    // as one design.
     val lineColor by animateColorAsState(
-        targetValue = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        targetValue = if (active) accent else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = tween(durationMillis = 260),
         label = "tvLyricLineColor",
     )
     val lineAlpha by animateFloatAsState(
-        targetValue = if (active) 1f else 0.72f,
+        targetValue = if (active) 1f else 0.42f,
         animationSpec = tween(durationMillis = 260),
         label = "tvLyricLineAlpha",
     )
-    Text(
-        text = line.text,
-        style = if (active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
-        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-        color = lineColor,
-        maxLines = 3,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer { alpha = lineAlpha },
+    val lineScale by animateFloatAsState(
+        targetValue = if (active) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 260),
+        label = "tvLyricLineScale",
     )
+    val barAlpha by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(durationMillis = 260),
+        label = "tvLyricBarAlpha",
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        // Brand accent bar — grows in as the line becomes current.
+        Box(
+            modifier = Modifier
+                .size(width = 4.dp, height = 30.dp)
+                .graphicsLayer { alpha = barAlpha }
+                .clip(RoundedCornerShape(percent = 50))
+                .background(accent),
+        )
+        Text(
+            text = line.text,
+            style = if (active) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+            color = lineColor,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer {
+                    alpha = lineAlpha
+                    scaleX = lineScale
+                    scaleY = lineScale
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                },
+        )
+    }
 }
 
 @Composable

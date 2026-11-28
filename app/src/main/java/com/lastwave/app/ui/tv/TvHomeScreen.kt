@@ -298,6 +298,8 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
         TvArtworkBackdrop(
             artworkUrl = chrome.current?.artworkUrl,
             accentHex = rootAmbientHex.value,
+            canvasUrl = viewModel.canvas?.url,
+            canvasPlaying = chrome.isPlaying,
         )
         if (!setupCompleted) {
             // First-run setup: pointer question + both sign-ins (skippable).
@@ -349,7 +351,7 @@ fun TvHomeRoot(viewModel: TvHomeViewModel = hiltViewModel()) {
                         )
                         TvTab.QUEUE -> TvQueueTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
                         TvTab.LIBRARY -> TvLibraryTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
-                        TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus)
+                        TvTab.LYRICS -> TvLyricsTab(viewModel = viewModel, railHomeFocus = railHomeFocus, accentHex = rootAmbientHex.value)
                         TvTab.SEARCH -> TvSearchTab(viewModel)
                         TvTab.SETTINGS -> TvSettingsTab()
                     }
@@ -572,6 +574,8 @@ private fun TvArtworkBackdrop(
     artworkUrl: String?,
     accentHex: String?,
     modifier: Modifier = Modifier,
+    canvasUrl: String? = null,
+    canvasPlaying: Boolean = true,
 ) {
     val parsedTint = accentHex
         ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
@@ -596,14 +600,32 @@ private fun TvArtworkBackdrop(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && canAffordBlur) {
             // Artwork changes dissolve instead of hard-cutting.
             Crossfade(
-                targetState = artworkUrl,
+                targetState = canvasUrl,
                 animationSpec = tween(durationMillis = 380),
                 label = "tvBackdropArt",
             ) { url ->
                 if (url != null) {
+                    // The track's motion canvas IS the ambience now: the same
+                    // clip the hero tile shows sharp, blown up full-screen and
+                    // blurred into colour — the room glows with the video while
+                    // the tile stays crisp.
+                    com.lastwave.app.ui.player.CanvasVideoPlayer(
+                        videoUrl = url,
+                        isPlaying = canvasPlaying,
+                        enableScrim = false,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                            .graphicsLayer {
+                                scaleX = 1.45f
+                                scaleY = 1.45f
+                            }
+                            .blur(46.dp, BlurredEdgeTreatment.Unbounded),
+                    )
+                } else if (artworkUrl != null) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(url)
+                            .data(artworkUrl)
                             // The backdrop is blurred to nothing — decoding
                             // full-res art here only wastes memory.
                             .size(960)
@@ -962,31 +984,67 @@ private fun TvNowPlayingHero(
                     TvHeroQueueButton(onClick = onOpenQueue)
                 }
             }
-            // Transport spans the whole card below art + words: fixed 30dp
-            // gaps keep the five controls evenly spaced at every TV width,
-            // independent of the text column's width.
+            // Transport console: the four secondary controls live inside one
+            // frosted pill so they read as a single cluster (no more five
+            // same-looking grey discs melting into the card), and play/pause
+            // stands alone as the hero control with its own colour halo.
             if (track != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(26.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(
-                        // Spotify-TV spread: the five controls distribute across
-                        // the whole text column with the play/pause centred.
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(Color.White.copy(alpha = 0.07f))
+                            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(percent = 50))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
                         TvTransportButton(
                             icon = if (shuffle) Icons.Rounded.ShuffleOn else Icons.Rounded.Shuffle,
                             contentDescription = stringResource(R.string.tv_shuffle),
                             active = shuffle,
+                            quiet = true,
                             onClick = viewModel::toggleShuffle,
                         )
                         TvTransportButton(
                             icon = Icons.Rounded.SkipPrevious,
                             contentDescription = stringResource(R.string.tv_previous),
+                            quiet = true,
                             onClick = viewModel::previous,
+                        )
+                        TvTransportButton(
+                            icon = Icons.Rounded.SkipNext,
+                            contentDescription = stringResource(R.string.tv_next),
+                            quiet = true,
+                            onClick = viewModel::next,
+                        )
+                        TvTransportButton(
+                            icon = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                            contentDescription = stringResource(R.string.tv_repeat),
+                            active = repeatMode != Player.REPEAT_MODE_OFF,
+                            quiet = true,
+                            onClick = viewModel::cycleRepeatMode,
+                        )
+                    }
+                    Box(contentAlignment = Alignment.Center) {
+                        // Colour halo behind play/pause — echoes the ambient
+                        // artwork/canvas tint so the primary control feels lit.
+                        Box(
+                            modifier = Modifier
+                                .requiredSize(128.dp)
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(
+                                            ambient.copy(alpha = 0.34f),
+                                            ambient.copy(alpha = 0.12f),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                ),
                         )
                         TvTransportButton(
                             icon = if (chrome.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -997,21 +1055,10 @@ private fun TvNowPlayingHero(
                             },
                             containerColor = MaterialTheme.colorScheme.primary,
                             iconTint = MaterialTheme.colorScheme.onPrimary,
-                            iconSize = 38.dp,
-                            buttonSize = 66.dp,
+                            iconSize = 40.dp,
+                            buttonSize = 74.dp,
                             modifier = Modifier.focusRequester(playFocus),
                             onClick = viewModel::togglePlayPause,
-                        )
-                        TvTransportButton(
-                            icon = Icons.Rounded.SkipNext,
-                            contentDescription = stringResource(R.string.tv_next),
-                            onClick = viewModel::next,
-                        )
-                        TvTransportButton(
-                            icon = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                            contentDescription = stringResource(R.string.tv_repeat),
-                            active = repeatMode != Player.REPEAT_MODE_OFF,
-                            onClick = viewModel::cycleRepeatMode,
                         )
                     }
                 }
@@ -1288,6 +1335,7 @@ private fun TvTransportButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     active: Boolean = false,
+    quiet: Boolean = false,
     containerColor: Color = Color.Transparent,
     iconTint: Color = MaterialTheme.colorScheme.onSurface,
     iconSize: Dp = 26.dp,
@@ -1297,8 +1345,12 @@ private fun TvTransportButton(
     var isFocused by remember { mutableStateOf(false) }
     val transportBackground by animateColorAsState(
         targetValue = when {
-            isFocused && containerColor == Color.Transparent -> MaterialTheme.colorScheme.surfaceContainerHighest
-            containerColor == Color.Transparent -> Color.White.copy(alpha = 0.10f)
+            isFocused && containerColor == Color.Transparent -> if (quiet) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
+            containerColor == Color.Transparent -> if (quiet) Color.Transparent else Color.White.copy(alpha = 0.10f)
             else -> containerColor
         },
         animationSpec = tween(durationMillis = 150),
@@ -1556,7 +1608,7 @@ private fun TvTrackCard(
 private val TvArtworkShape = RoundedCornerShape(24.dp)
 
 @Composable
-private fun TvArtwork(artworkUrl: String?, size: Dp) {
+internal fun TvArtwork(artworkUrl: String?, size: Dp) {
     Box(
         modifier = Modifier
             .size(size)

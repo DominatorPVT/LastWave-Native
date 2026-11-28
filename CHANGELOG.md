@@ -89,6 +89,9 @@
 - **Canvas-Driven TV Ambience:** When a Canvas motion cover plays, the whole TV screen now follows its colours — the blurred backdrop, the rail side (logo, Home, Search, Library, Settings) and the hero glow all shift to the video's palette. The backdrop also flows edge to edge with its blur, removing the sharp black band around the rail, and TV artwork corners are rounder and smoother.
 - **Desktop Features on TV:** TV Settings gains two audiophile features from LastWave Desktop — a sleep timer (Off / 15 / 30 / 60 minutes with a live countdown) and a loudness normalization toggle (ReplayGain) that keeps volume even across tracks.
 - **TV Home Polish:** The navigation rail is now a dark glass sidebar that flows over the screen ambience, section headers carry a brand accent bar, and the frosted cards got crisper hairlines.
+- **TV Transport Console:** The hero transport is now a console — shuffle, prev/next and repeat sit together inside one frosted pill, while play/pause stands alone with a colour halo lit by the artwork's own palette. No more five identical discs melting into the card.
+- **Canvas Ambience:** When a track has a motion canvas, the same clip that plays sharp in the hero tile now also fills the whole screen blurred behind the app — home, lyrics, everything glows with the video while the tile stays crisp.
+- **Lyrics Stage:** The lyrics tab was redesigned as a stage — artwork-thumb header with source pill, a readability scrim over the ambience, and the current line large, accent-lit and marked by a brand bar that follows the canvas colour. Plain lyrics now scroll.
 
 ## [5.0.0] - 2026-10-30
 
